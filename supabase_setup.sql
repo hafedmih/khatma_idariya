@@ -100,3 +100,22 @@ INSERT INTO public.hizb_links (hizb, youtube, pdf) VALUES
 (59, 'https://youtu.be/iSqfUM-pAhw',          'https://drive.google.com/open?id=12SzJIEZmKlAPoqJ2YNkKcbeiO1XsYh2r'),
 (60, 'https://youtu.be/iSqfUM-pAhw?t=1341',   'https://drive.google.com/open?id=1-Q9aGOPrEE7Hpva4Fs9ucGnbwuhBYnsg')
 ON CONFLICT (hizb) DO NOTHING;
+
+-- ══════════════════════════════════════════════════════════════
+--  4. جدول أوقات بداية كل صفحة لكل حزب
+--     page_times: مصفوفة 7 أرقام (ثواني) للصفحات 2→8
+--     الصفحة 1 دائماً = 0 (غير مخزنة)
+--     مثال: (1, ARRAY[240,480,720,960,1200,1440,1680])
+--     ← صفحة 2 = 240s، صفحة 3 = 480s، ...
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.hizb_page_times (
+  hizb       INTEGER   PRIMARY KEY REFERENCES public.hizb_links(hizb),
+  page_times INTEGER[] NOT NULL DEFAULT '{}'
+);
+
+ALTER TABLE public.hizb_page_times ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "read_all"    ON public.hizb_page_times FOR SELECT USING (true);
+CREATE POLICY "admin_write" ON public.hizb_page_times FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');

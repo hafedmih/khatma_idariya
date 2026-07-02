@@ -298,6 +298,7 @@ class _ActionRow extends StatelessWidget {
           url:        _pdfUrl,
           title:      'الحزب ${hizb.number}',
           youtubeUrl: _ytUrl,
+          hizbLinks:  links,
         ),
       ),
     );

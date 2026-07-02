@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../theme/app_theme.dart';
+import '../services/links_service.dart';
 
 class PdfViewerScreen extends StatefulWidget {
-  final String  url;
-  final String  title;
-  final String? youtubeUrl;
+  final String     url;
+  final String     title;
+  final String?    youtubeUrl;
+  final HizbLinks? hizbLinks; // لأوقات الصفحات
 
   const PdfViewerScreen({
     super.key,
     required this.url,
     required this.title,
     this.youtubeUrl,
+    this.hizbLinks,
   });
 
   @override
@@ -29,6 +32,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   WebViewController? _audioCtrl;
   bool _playing    = false;
   bool _audioReady = false;
+  int  _currentPage = 1;
 
   @override
   void initState() {
@@ -42,6 +46,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     }
   }
 
+
   // ── PDF WebView ────────────────────────────────────────
   void _initPdf() {
     _pdfCtrl = WebViewController()
@@ -53,6 +58,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         onWebResourceError: (_) => setState(() => _loading = false),
       ))
       ..loadRequest(Uri.parse(_toViewerUrl(widget.url)));
+  }
+
+  void _goToPage(int page) {
+    if (page < 1) return;
+    setState(() => _currentPage = page);
+    final targetSec = widget.hizbLinks?.secondsForPage(page) ?? 0;
+    _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($targetSec,true);');
   }
 
   String _toViewerUrl(String raw) {
@@ -234,11 +246,14 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
             Positioned(
               left: 0, right: 0, bottom: 0,
               child: _AudioBar(
-                playing:   _playing,
-                ready:     _audioReady,
-                onToggle:  _togglePlay,
-                onBack:    () => _seekBy(-10),
-                onForward: () => _seekBy(10),
+                playing:     _playing,
+                ready:       _audioReady,
+                currentPage: _currentPage,
+                onToggle:    _togglePlay,
+                onBack:      () => _seekBy(-10),
+                onForward:   () => _seekBy(10),
+                onPagePrev:  () => _goToPage(_currentPage - 1),
+                onPageNext:  () => _goToPage(_currentPage + 1),
               ),
             ),
         ],
@@ -251,69 +266,100 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
 class _AudioBar extends StatelessWidget {
   final bool         playing;
   final bool         ready;
+  final int          currentPage;
   final VoidCallback onToggle;
   final VoidCallback onBack;
   final VoidCallback onForward;
+  final VoidCallback onPagePrev;
+  final VoidCallback onPageNext;
 
   const _AudioBar({
     required this.playing,
     required this.ready,
+    required this.currentPage,
     required this.onToggle,
     required this.onBack,
     required this.onForward,
+    required this.onPagePrev,
+    required this.onPageNext,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppTheme.primaryDk,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.headphones_rounded, color: Colors.white54, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              ready ? 'تلاوة صوتية' : 'جارٍ التحميل…',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const Spacer(),
-
-            IconButton(
-              icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
-              iconSize: 30,
-              onPressed: ready ? onBack : null,
-            ),
-
-            GestureDetector(
-              onTap: ready ? onToggle : null,
-              child: Container(
-                width: 54, height: 54,
-                decoration: BoxDecoration(
-                  color: ready ? AppTheme.gold : Colors.white24,
-                  shape: BoxShape.circle,
-                  boxShadow: ready
-                      ? [BoxShadow(
-                          color: AppTheme.gold.withOpacity(0.4),
-                          blurRadius: 12, offset: const Offset(0, 4))]
-                      : null,
+            // ── صف التحكم بالصوت ──
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
+                  iconSize: 28,
+                  onPressed: ready ? onBack : null,
                 ),
-                child: ready
-                    ? Icon(
-                        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: Colors.white, size: 32)
-                    : const SizedBox(
-                        width: 24, height: 24,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white54)),
-              ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: ready ? onToggle : null,
+                  child: Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(
+                      color: ready ? AppTheme.gold : Colors.white24,
+                      shape: BoxShape.circle,
+                      boxShadow: ready
+                          ? [BoxShadow(
+                              color: AppTheme.gold.withOpacity(0.4),
+                              blurRadius: 10, offset: const Offset(0, 3))]
+                          : null,
+                    ),
+                    child: ready
+                        ? Icon(
+                            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            color: Colors.white, size: 30)
+                        : const SizedBox(
+                            width: 22, height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white54)),
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
+                  iconSize: 28,
+                  onPressed: ready ? onForward : null,
+                ),
+              ],
             ),
-
-            IconButton(
-              icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
-              iconSize: 30,
-              onPressed: ready ? onForward : null,
+            // ── صف التنقل بين الصفحات ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, color: Colors.white60),
+                  iconSize: 26,
+                  onPressed: ready && currentPage > 1 ? onPagePrev : null,
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'صفحة $currentPage',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, color: Colors.white60),
+                  iconSize: 26,
+                  onPressed: ready ? onPageNext : null,
+                ),
+              ],
             ),
           ],
         ),

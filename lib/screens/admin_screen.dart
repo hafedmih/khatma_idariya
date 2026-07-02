@@ -207,18 +207,27 @@ class _HizbEditTileState extends State<_HizbEditTile> {
   bool _saving   = false;
   late final TextEditingController _ytCtrl;
   late final TextEditingController _pdfCtrl;
+  // 7 حقول لأوقات الصفحات 2→8 (بالثواني)
+  late final List<TextEditingController> _pageCtrl;
 
   @override
   void initState() {
     super.initState();
     _ytCtrl  = TextEditingController(text: widget.links.youtube);
     _pdfCtrl = TextEditingController(text: widget.links.pdf);
+    _pageCtrl = List.generate(7, (i) {
+      final v = i < widget.links.pageTimes.length
+          ? widget.links.pageTimes[i].toString()
+          : '';
+      return TextEditingController(text: v);
+    });
   }
 
   @override
   void dispose() {
     _ytCtrl.dispose();
     _pdfCtrl.dispose();
+    for (final c in _pageCtrl) c.dispose();
     super.dispose();
   }
 
@@ -230,6 +239,13 @@ class _HizbEditTileState extends State<_HizbEditTile> {
         youtube: _ytCtrl.text.trim(),
         pdf:     _pdfCtrl.text.trim(),
       );
+      // حفظ أوقات الصفحات إذا أُدخلت
+      final times = _pageCtrl
+          .map((c) => int.tryParse(c.text.trim()) ?? 0)
+          .toList();
+      if (times.any((t) => t > 0)) {
+        await LinksService.updatePageTimes(widget.links.hizb, times);
+      }
       widget.onSaved();
       setState(() => _expanded = false);
     } catch (e) {
@@ -300,7 +316,30 @@ class _HizbEditTileState extends State<_HizbEditTile> {
                     ),
                     style: const TextStyle(fontSize: 13),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
+                  // ── أوقات الصفحات ──
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('أوقات الصفحات (ثواني) — الصفحة 1 = 0 دائماً',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 6),
+                  ...List.generate(7, (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: TextField(
+                      controller: _pageCtrl[i],
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'صفحة ${i + 2}',
+                        prefixIcon: const Icon(Icons.timer_outlined,
+                            color: AppTheme.primary, size: 18),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  )),
+                  const SizedBox(height: 6),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
