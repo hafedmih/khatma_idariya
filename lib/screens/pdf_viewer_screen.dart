@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -33,6 +34,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool _playing    = false;
   bool _audioReady = false;
   int  _currentPage = 1;
+  bool _looping    = false;
+  Timer? _loopTimer;
 
   @override
   void initState() {
@@ -65,6 +68,56 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     setState(() => _currentPage = page);
     final targetSec = widget.hizbLinks?.secondsForPage(page) ?? 0;
     _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($targetSec,true);');
+    if (_looping) _startLoopTimer();
+  }
+
+  void _toggleLoop() {
+    setState(() => _looping = !_looping);
+    if (_looping) {
+      _startLoopTimer();
+    } else {
+      _loopTimer?.cancel();
+      _loopTimer = null;
+    }
+  }
+
+  void _startLoopTimer() {
+    _loopTimer?.cancel();
+    final links = widget.hizbLinks;
+    if (links == null) return;
+
+    final pageStart = links.secondsForPage(_currentPage);
+    final pageEnd   = links.secondsForPage(_currentPage + 1);
+    // إذا لا يوجد وقت للصفحة التالية (آخر صفحة) لا تكرار
+    if (pageEnd <= pageStart) return;
+
+    _loopTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (!mounted || !_looping) return;
+      // اجلب الوقت الحالي من المشغّل
+      await _audioCtrl?.runJavaScript(
+        'FlutterBridge.postMessage("time:" + Math.floor(ytP ? ytP.getCurrentTime() : 0));',
+      );
+    });
+  }
+
+  void _handleTimeMessage(String msg) {
+    if (!_looping) return;
+    final secs = int.tryParse(msg.replaceFirst('time:', ''));
+    if (secs == null) return;
+    final links    = widget.hizbLinks;
+    if (links == null) return;
+    final pageEnd  = links.secondsForPage(_currentPage + 1);
+    final pageStart = links.secondsForPage(_currentPage);
+    if (pageEnd > pageStart && secs >= pageEnd - 1) {
+      // عد لبداية الصفحة
+      _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($pageStart,true);');
+    }
+  }
+
+  @override
+  void dispose() {
+    _loopTimer?.cancel();
+    super.dispose();
   }
 
   String _toViewerUrl(String raw) {
@@ -137,10 +190,11 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
       ..addJavaScriptChannel(
         'FlutterBridge',
         onMessageReceived: (msg) {
-          // ignore: avoid_print
-          print('[YT] ${msg.message}');
           if (!mounted) return;
-          switch (msg.message) {
+          final m = msg.message;
+          if (m.startsWith('time:')) { _handleTimeMessage(m); return; }
+          if (m.startsWith('dbg:'))  { return; }
+          switch (m) {
             case 'playing':
               setState(() { _playing = true; _audioReady = true; });
             case 'paused':
@@ -190,8 +244,6 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
     return m != null ? int.tryParse(m.group(1)!) ?? 0 : 0;
   }
 
-  @override
-  void dispose() => super.dispose();
 
   // ════════════════════════════════════════════
   @override
@@ -226,35 +278,35 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
               )
             : null,
       ),
-      body: Stack(
+      body: Column(
         children: [
-          // PDF يأخذ كل الشاشة
-          Positioned.fill(
-            child: WebViewWidget(controller: _pdfCtrl),
+          // PDF + WebView الصوت المخفي
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: WebViewWidget(controller: _pdfCtrl)),
+                if (hasAudio)
+                  Positioned(
+                    left: 0, top: 0, width: 1, height: 1,
+                    child: WebViewWidget(controller: _audioCtrl!),
+                  ),
+              ],
+            ),
           ),
 
-          // YouTube WebView مخفي (1×1px) للصوت فقط
+          // شريط التحكم ثابت في الأسفل — لا يغطي PDF
           if (hasAudio)
-            Positioned(
-              left: 0, top: 0,
-              width: 1, height: 1,
-              child: WebViewWidget(controller: _audioCtrl!),
-            ),
-
-          // شريط التحكم في الأسفل
-          if (hasAudio)
-            Positioned(
-              left: 0, right: 0, bottom: 0,
-              child: _AudioBar(
-                playing:     _playing,
-                ready:       _audioReady,
-                currentPage: _currentPage,
-                onToggle:    _togglePlay,
-                onBack:      () => _seekBy(-10),
-                onForward:   () => _seekBy(10),
-                onPagePrev:  () => _goToPage(_currentPage - 1),
-                onPageNext:  () => _goToPage(_currentPage + 1),
-              ),
+            _AudioBar(
+              playing:     _playing,
+              ready:       _audioReady,
+              currentPage: _currentPage,
+              looping:     _looping,
+              onToggle:    _togglePlay,
+              onBack:      () => _seekBy(-10),
+              onForward:   () => _seekBy(10),
+              onPagePrev:  () => _goToPage(_currentPage - 1),
+              onPageNext:  () => _goToPage(_currentPage + 1),
+              onLoopToggle: _toggleLoop,
             ),
         ],
       ),
@@ -267,96 +319,112 @@ class _AudioBar extends StatelessWidget {
   final bool         playing;
   final bool         ready;
   final int          currentPage;
+  final bool         looping;
   final VoidCallback onToggle;
   final VoidCallback onBack;
   final VoidCallback onForward;
   final VoidCallback onPagePrev;
   final VoidCallback onPageNext;
+  final VoidCallback onLoopToggle;
 
   const _AudioBar({
     required this.playing,
     required this.ready,
     required this.currentPage,
+    required this.looping,
     required this.onToggle,
     required this.onBack,
     required this.onForward,
     required this.onPagePrev,
     required this.onPageNext,
+    required this.onLoopToggle,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppTheme.primaryDk,
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── صف التحكم بالصوت ──
+            // ── صف التحكم بالصوت: زر التكرار يسار، تشغيل في الوسط تماماً ──
             Row(
               children: [
+                // زر التكرار في اليسار
                 IconButton(
-                  icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
-                  iconSize: 28,
-                  onPressed: ready ? onBack : null,
+                  icon: Icon(Icons.repeat_one_rounded,
+                      color: looping ? AppTheme.gold : Colors.white38),
+                  iconSize: 26,
+                  onPressed: ready ? onLoopToggle : null,
                 ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: ready ? onToggle : null,
-                  child: Container(
-                    width: 52, height: 52,
-                    decoration: BoxDecoration(
-                      color: ready ? AppTheme.gold : Colors.white24,
-                      shape: BoxShape.circle,
-                      boxShadow: ready
-                          ? [BoxShadow(
-                              color: AppTheme.gold.withOpacity(0.4),
-                              blurRadius: 10, offset: const Offset(0, 3))]
-                          : null,
-                    ),
-                    child: ready
-                        ? Icon(
-                            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            color: Colors.white, size: 30)
-                        : const SizedBox(
-                            width: 22, height: 22,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white54)),
+                // مجموعة الوسط (←10 + تشغيل + 10→) مرتكزة
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
+                        iconSize: 28,
+                        onPressed: ready ? onBack : null,
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: ready ? onToggle : null,
+                        child: Container(
+                          width: 52, height: 52,
+                          decoration: BoxDecoration(
+                            color: ready ? AppTheme.gold : Colors.white24,
+                            shape: BoxShape.circle,
+                            boxShadow: ready
+                                ? [BoxShadow(color: AppTheme.gold.withOpacity(0.4),
+                                    blurRadius: 10, offset: const Offset(0, 3))]
+                                : null,
+                          ),
+                          child: ready
+                              ? Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  color: Colors.white, size: 30)
+                              : const SizedBox(width: 22, height: 22,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white54)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
+                        iconSize: 28,
+                        onPressed: ready ? onForward : null,
+                      ),
+                    ],
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
-                  iconSize: 28,
-                  onPressed: ready ? onForward : null,
-                ),
+                // يمين فارغ بنفس عرض زر التكرار للتوازن
+                const SizedBox(width: 48),
               ],
             ),
-            // ── صف التنقل بين الصفحات ──
+            // ── صف الصفحات في الأسفل ──
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   icon: const Icon(Icons.chevron_right_rounded, color: Colors.white60),
-                  iconSize: 26,
+                  iconSize: 24,
                   onPressed: ready && currentPage > 1 ? onPagePrev : null,
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.white10,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    'صفحة $currentPage',
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
+                  child: Text('صفحة $currentPage',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 ),
                 IconButton(
                   icon: const Icon(Icons.chevron_left_rounded, color: Colors.white60),
-                  iconSize: 26,
+                  iconSize: 24,
                   onPressed: ready ? onPageNext : null,
                 ),
               ],
