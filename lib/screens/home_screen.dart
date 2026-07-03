@@ -214,46 +214,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── بطاقة المصحف الكامل + ليلة الختمة ──
   Widget _buildMushafCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // ── المصحف الكامل ──
-          _CardRow(
+    return Row(
+      children: [
+        Expanded(
+          child: _MiniCard(
             icon: Icons.menu_book_rounded,
             iconColor: AppTheme.primary,
             title: 'المصحف الكامل',
-            subtitle: 'تصفح جميع الأحزاب الستين',
             onTap: () => Navigator.push(
               context,
               _slide(_AllHizbsScreen(ahzab: _ahzab!, links: _links)),
             ),
           ),
-          Divider(height: 1, color: AppTheme.primary.withOpacity(0.1)),
-          // ── ليلة الختمة ──
-          _CardRow(
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _MiniCard(
             icon: Icons.nights_stay_rounded,
             iconColor: AppTheme.gold,
             title: 'ليلة الختمة',
-            subtitle: 'تواريخ إتمام القرآن الكريم',
             onTap: () => Navigator.push(
               context,
               _slide(const _KhatmaNightsScreen()),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -591,17 +577,15 @@ class _AllHizbsScreen extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════
-class _CardRow extends StatelessWidget {
+class _MiniCard extends StatelessWidget {
   final IconData     icon;
   final Color        iconColor;
   final String       title;
-  final String       subtitle;
   final VoidCallback onTap;
-  const _CardRow({
+  const _MiniCard({
     required this.icon,
     required this.iconColor,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
@@ -609,36 +593,38 @@ class _CardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: iconColor.withOpacity(0.2)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Row(
           children: [
             Container(
-              width: 38, height: 38,
+              width: 36, height: 36,
               decoration: BoxDecoration(
                 color: iconColor.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor, size: 20),
+              child: Icon(icon, color: iconColor, size: 18),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 8),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textHigh)),
-                  const SizedBox(height: 1),
-                  Text(subtitle,
-                      style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textMed)),
-                ],
-              ),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textHigh)),
             ),
-            Icon(Icons.chevron_left_rounded, color: iconColor, size: 22),
           ],
         ),
       ),
