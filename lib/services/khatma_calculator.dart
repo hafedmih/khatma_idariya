@@ -81,6 +81,20 @@ class KhatmaCalculator {
     return _mod(days, 21) + 1;
   }
 
+  // ─────────────────────────────────────────────
+  /// يُرجع تواريخ ليالي الختمة (الأيام التي يُقرأ فيها الحزب 60)
+  /// من [from] إلى [to] مرتبةً تصاعدياً
+  static List<DateTime> getKhatmaDates(DateTime from, DateTime to) {
+    final result = <DateTime>[];
+    var d = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day);
+    while (!d.isAfter(end)) {
+      if (getHizbsForDate(d).contains(60)) result.add(d);
+      d = d.add(const Duration(days: 1));
+    }
+    return result;
+  }
+
   /// أرقام الأحزاب لأسبوع كامل ابتداءً من تاريخ
   static Map<DateTime, List<int>> getWeekHizbs(DateTime weekStart) {
     final result = <DateTime, List<int>>{};

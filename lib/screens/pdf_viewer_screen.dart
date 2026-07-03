@@ -66,8 +66,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void _goToPage(int page) {
     if (page < 1) return;
     setState(() => _currentPage = page);
-    final targetSec = widget.hizbLinks?.secondsForPage(page) ?? 0;
-    _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($targetSec,true);');
+    final links = widget.hizbLinks;
+    // لا تتحرك إلى الثانية 0 إذا لم تكن هناك بيانات — فقط غيّر رقم الصفحة
+    if (links != null && links.pageTimes.isNotEmpty) {
+      final targetSec = links.secondsForPage(page);
+      _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($targetSec,true);');
+    }
     if (_looping) _startLoopTimer();
   }
 
