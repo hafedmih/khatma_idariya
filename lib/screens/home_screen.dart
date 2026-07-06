@@ -7,6 +7,7 @@ import '../services/links_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hizb_card.dart';
 import 'hizb_detail_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -94,22 +95,60 @@ class _HomeScreenState extends State<HomeScreen> {
       expandedHeight: 0,
       backgroundColor: AppTheme.primary,
       title: const Text(
-        'الختمة الإدارية',
+        'القرآن الكريم - ختمة الإدارة',
         style: TextStyle(
           color: Colors.white,
-          fontSize: 19,
+          fontSize: 17,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.3,
         ),
       ),
       actions: [
         IconButton(
+          tooltip: 'مشاركة ورد اليوم عبر واتساب',
+          icon: const Icon(Icons.share_rounded, color: Colors.white),
+          onPressed: _shareWird,
+        ),
+        IconButton(
           tooltip: 'اختر تاريخاً',
           icon: const Icon(Icons.calendar_month_rounded, color: Colors.white),
           onPressed: _pickDate,
         ),
+        IconButton(
+          tooltip: 'الإعدادات',
+          icon: const Icon(Icons.settings_rounded, color: Colors.white),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
       ],
     );
+  }
+
+  // ── مشاركة ورد اليوم عبر واتساب (العنوان = اسم التطبيق) ──
+  Future<void> _shareWird() async {
+    final ahzab = _ahzab;
+    if (ahzab == null) return;
+    final hizbs   = HizbService.findMultiple(ahzab, _todayNums);
+    final dateStr =
+        '${_days[_date.weekday]} ${_date.day} ${_months[_date.month]} ${_date.year}';
+
+    final buf = StringBuffer()
+      ..writeln('القرآن الكريم - ختمة الإدارة')
+      ..writeln()
+      ..writeln('📖 ورد $dateStr:')
+      ..writeln();
+    for (final h in hizbs) {
+      buf.writeln('• الحزب ${h.number}: ${h.rangeFull}');
+    }
+
+    final uri = Uri.parse(
+      'https://wa.me/?text=${Uri.encodeComponent(buf.toString().trim())}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   // ── جسم الشاشة ──

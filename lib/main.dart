@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'screens/home_screen.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -13,6 +14,11 @@ void main() async {
     url:     SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
   );
+
+  // تذكيرات الورد اليومية
+  await NotificationService.init();
+  await NotificationService.requestPermission();
+  await NotificationService.reschedule();
 
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const KhatmaApp());
@@ -24,7 +30,7 @@ class KhatmaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title:                 'الختمة الإدارية',
+      title:                 'القرآن الكريم - ختمة الإدارة',
       debugShowCheckedModeBanner: false,
       theme:                 AppTheme.theme,
       locale:                const Locale('ar'),

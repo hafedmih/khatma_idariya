@@ -17,6 +17,10 @@ dependencies:
   webview_flutter: ^4.14.0
   supabase_flutter: ^2.8.4
   pdfx: ^2.6.0
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:

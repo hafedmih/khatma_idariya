@@ -20,13 +20,25 @@ subprojects {
 }
 
 // ارفع compileSdk لكل وحدات الإضافات (مكتبات) لأن تبعية exifinterface 1.4.1
-// (التي يجرّها pdfx) تتطلب أن تُبنى الوحدات على compileSdk 34+
+// (التي يجرّها pdfx) تتطلب أن تُبنى الوحدات على compileSdk 34+.
+// وثبّت هدف JVM على 17 لتفادي تعارض Java/Kotlin (flutter_local_notifications).
 subprojects {
-    val bumpCompileSdk = {
+    val configureAndroid = {
         (extensions.findByName("android") as? com.android.build.api.dsl.LibraryExtension)
-            ?.let { it.compileSdk = 36 }
+            ?.let {
+                it.compileSdk = 36
+                it.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+                it.compileOptions.targetCompatibility = JavaVersion.VERSION_17
+            }
     }
-    if (state.executed) bumpCompileSdk() else afterEvaluate { bumpCompileSdk() }
+    if (state.executed) configureAndroid() else afterEvaluate { configureAndroid() }
+
+    // وحّد هدف Kotlin على 17 لكل الوحدات
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {
