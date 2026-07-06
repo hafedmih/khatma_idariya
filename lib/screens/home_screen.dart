@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/hizb.dart';
 import '../services/hizb_service.dart';
@@ -23,6 +27,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime             _date      = DateTime.now();
   bool                 _loading   = true;
   String?              _error;
+
+  // لالتقاط صورة الشاشة عند المشاركة
+  final GlobalKey _shotKey = GlobalKey();
 
   // ── أسماء الأيام والشهور بالعربية ──
   static const _days   = ['', 'الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد'];
@@ -74,14 +81,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_loading) return const _LoadingScreen();
     if (_error != null) return _ErrorScreen(error: _error!);
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          _buildAppBar(),
-          SliverToBoxAdapter(child: _buildBody()),
-        ],
+    return RepaintBoundary(
+      key: _shotKey,
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            _buildAppBar(),
+            SliverToBoxAdapter(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
@@ -105,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       actions: [
         IconButton(
-          tooltip: 'مشاركة ورد اليوم عبر واتساب',
+          tooltip: 'مشاركة ورد اليوم',
           icon: const Icon(Icons.share_rounded, color: Colors.white),
           onPressed: _shareWird,
         ),
@@ -126,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── مشاركة ورد اليوم عبر واتساب (العنوان = اسم التطبيق) ──
+  // ── مشاركة ورد اليوم: صورة الشاشة + النص + روابط يوتيوب و PDF ──
   Future<void> _shareWird() async {
     final ahzab = _ahzab;
     if (ahzab == null) return;
@@ -141,13 +151,36 @@ class _HomeScreenState extends State<HomeScreen> {
       ..writeln();
     for (final h in hizbs) {
       buf.writeln('• الحزب ${h.number}: ${h.rangeFull}');
+      if (h.youtube.isNotEmpty) buf.writeln('   ▶️ استماع: ${h.youtube}');
+      if (h.pdf.isNotEmpty)     buf.writeln('   📄 مصحف: ${h.pdf}');
+      buf.writeln();
+    }
+    final text = buf.toString().trim();
+
+    // التقاط صورة الشاشة الحالية
+    XFile? shot;
+    try {
+      final boundary =
+          _shotKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary != null) {
+        final image = await boundary.toImage(pixelRatio: 2.0);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (bytes != null) {
+          final file = await File(
+            '${Directory.systemTemp.path}/wird_share.png',
+          ).writeAsBytes(bytes.buffer.asUint8List());
+          shot = XFile(file.path, mimeType: 'image/png');
+        }
+      }
+    } catch (_) {
+      // تعذّر التقاط الصورة — نشارك النص فقط
     }
 
-    final uri = Uri.parse(
-      'https://wa.me/?text=${Uri.encodeComponent(buf.toString().trim())}',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (shot != null) {
+      await Share.shareXFiles([shot],
+          text: text, subject: 'القرآن الكريم - ختمة الإدارة');
+    } else {
+      await Share.share(text, subject: 'القرآن الكريم - ختمة الإدارة');
     }
   }
 
