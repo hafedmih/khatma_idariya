@@ -59,10 +59,10 @@ class LinksService {
   static Future<Map<int, HizbLinks>> load() async {
     if (_cache != null) return _cache!;
 
-    // 1) روابط الفيديو من YouTube Data API (بدل Supabase)
+    // 1) روابط الفيديو + أوقات الأثمان (من وصف الفيديو) من YouTube Data API
     final youtube = await YoutubeService.load();
 
-    // 2) أوقات الصفحات من Supabase (اختياري — إن توفّر الجدول)
+    // 2) أوقات الصفحات من Supabase — تُستعمل فقط كبديل إن لم يوفّرها الوصف
     final times = <int, List<int>>{};
     try {
       final rows = await _db
@@ -76,15 +76,17 @@ class LinksService {
       // جدول page_times غير متاح — لا بأس
     }
 
-    // 3) ادمج حسب رقم الحزب
+    // 3) ادمج حسب رقم الحزب — أوقات يوتيوب أولاً ثم Supabase
     final hizbs = <int>{...youtube.keys, ...times.keys};
     _cache = {
       for (final h in hizbs)
         h: HizbLinks(
           hizb:      h,
-          youtube:   youtube[h] ?? '',
+          youtube:   youtube[h]?.url ?? '',
           pdf:       '',
-          pageTimes: times[h] ?? const [],
+          pageTimes: (youtube[h]?.pageTimes.isNotEmpty ?? false)
+              ? youtube[h]!.pageTimes
+              : (times[h] ?? const []),
         ),
     };
     return _cache!;

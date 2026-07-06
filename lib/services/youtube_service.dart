@@ -4,20 +4,28 @@ import 'dart:io';
 // ═══════════════════════════════════════════════════════════
 //  YoutubeService — يجلب روابط تلاوة كل حزب من YouTube Data API
 //  بدلاً من Supabase. يقرأ playlist القارئ ويستخرج رقم الحزب من
-//  عنوان الفيديو (مثال: "الحزب الأول (1)" أو "... 13").
+//  عنوان الفيديو (مثال: "الحزب الأول (1)" أو "... 13")، وأوقات
+//  الأثمان من وصف الفيديو (مثال: "03:26 - الثمن الثاني").
 // ═══════════════════════════════════════════════════════════
+
+/// معلومات فيديو حزب واحد: الرابط + أوقات الأثمان (بالثواني، للأثمان 2..8)
+class YtVideo {
+  final String    url;
+  final List<int> pageTimes;
+  const YtVideo(this.url, this.pageTimes);
+}
 
 class YoutubeService {
   static const String _apiKey     = 'AIzaSyAHik492WIsF1BDqCoo_35yt8VNhjJkPo0';
   static const String _playlistId = 'PLtLa7ryveIIIrO3elTmi-2UOLvWihbfX-';
 
-  static Map<int, String>? _cache;
+  static Map<int, YtVideo>? _cache;
 
-  /// خريطة: رقم الحزب → رابط مشاهدة يوتيوب
-  static Future<Map<int, String>> load() async {
+  /// خريطة: رقم الحزب → (رابط يوتيوب + أوقات الأثمان)
+  static Future<Map<int, YtVideo>> load() async {
     if (_cache != null) return _cache!;
 
-    final map = <int, String>{};
+    final map = <int, YtVideo>{};
     try {
       String? pageToken;
       final client = HttpClient();
@@ -49,6 +57,7 @@ class YoutubeService {
             if (snippet == null) continue;
 
             final title   = (snippet['title'] as String?) ?? '';
+            final desc    = (snippet['description'] as String?) ?? '';
             final videoId =
                 ((snippet['resourceId'] as Map<String, dynamic>?)?['videoId']
                     as String?) ?? '';
@@ -58,7 +67,10 @@ class YoutubeService {
             if (hizb == null) continue; // "Private video" / "Deleted video"
 
             // في حال تكرار الحزب نأخذ الرفع الأحدث (الأخير في القائمة)
-            map[hizb] = 'https://www.youtube.com/watch?v=$videoId';
+            map[hizb] = YtVideo(
+              'https://www.youtube.com/watch?v=$videoId',
+              _pageTimesFromDescription(desc),
+            );
           }
 
           pageToken = json['nextPageToken'] as String?;
@@ -88,5 +100,21 @@ class YoutubeService {
     if (m == null) return null;
     final n = int.tryParse(m.group(0)!);
     return (n != null && n >= 1 && n <= 60) ? n : null;
+  }
+
+  // ── يستخرج أوقات الأثمان من وصف الفيديو ────────────────────
+  // يدعم mm:ss و hh:mm:ss (مثال: "03:26 - الثمن الثاني").
+  // يُرجع القائمة بالثواني للأثمان 2..8 (الثمن الأول = 0 لا يُدرج).
+  static List<int> _pageTimesFromDescription(String desc) {
+    final re = RegExp(r'(?:(\d{1,2}):)?(\d{1,2}):(\d{2})');
+    final times = <int>[];
+    for (final m in re.allMatches(desc)) {
+      final h  = int.tryParse(m.group(1) ?? '') ?? 0;
+      final mi = int.parse(m.group(2)!);
+      final s  = int.parse(m.group(3)!);
+      final total = h * 3600 + mi * 60 + s;
+      if (total > 0) times.add(total); // تجاهل 00:00 (الثمن الأول)
+    }
+    return times;
   }
 }
