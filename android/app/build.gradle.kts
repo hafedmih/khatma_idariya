@@ -50,6 +50,10 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // عطّل تصغير/تشويش الشيفرة: R8 كان يحذف معلومات أنواع Gson
+            // التي يحتاجها flutter_local_notifications (خطأ "Missing type parameter")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

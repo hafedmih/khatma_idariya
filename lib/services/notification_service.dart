@@ -94,10 +94,28 @@ class NotificationService {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await android?.requestNotificationsPermission();
+    await android?.requestExactAlarmsPermission();
 
     final ios = _plugin.resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>();
     await ios?.requestPermissions(alert: true, badge: true, sound: true);
+  }
+
+  // ── إشعار تجريبي فوري (للتحقق من عمل التذكيرات) ─────────
+  static Future<void> showTest() async {
+    if (!_initialized) await init();
+    await requestPermission();
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: 'تذكيرات يومية بقراءة ورد القرآن',
+        importance: Importance.high,
+        priority:   Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(),
+    );
+    await _plugin.show(999, _appName, 'إشعار تجريبي — التذكيرات تعمل ✅', details);
   }
 
   // ── الإعدادات (SharedPreferences) ──────────────────────
@@ -157,7 +175,8 @@ class NotificationService {
       r.body,
       _nextInstanceOf(r.hour, r.minute),
       details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      // تنبيه دقيق حتى في وضع توفير الطاقة (Doze) — ضروري لموثوقية التذكير
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time, // يتكرر يومياً

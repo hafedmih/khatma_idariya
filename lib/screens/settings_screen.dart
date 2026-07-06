@@ -95,6 +95,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.notifications_none_rounded),
+                  label: const Text('إرسال إشعار تجريبي الآن'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    await NotificationService.showTest();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('أُرسل إشعار تجريبي — تحقّق من شريط الإشعارات'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
                 Text(
                   _master
                       ? 'ستصلك التذكيرات المفعّلة يومياً في أوقاتها.'

@@ -10,18 +10,31 @@ import 'theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url:     SupabaseConfig.url,
-    anonKey: SupabaseConfig.anonKey,
-  );
-
-  // تذكيرات الورد اليومية
-  await NotificationService.init();
-  await NotificationService.requestPermission();
-  await NotificationService.reschedule();
+  // لا نسمح لأي تهيئة بأن تمنع إقلاع الواجهة (تفادي التعلّق عند شاشة البداية)
+  try {
+    await Supabase.initialize(
+      url:     SupabaseConfig.url,
+      anonKey: SupabaseConfig.anonKey,
+    );
+  } catch (e) {
+    debugPrint('Supabase init failed: $e');
+  }
 
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const KhatmaApp());
+
+  // تذكيرات الورد اليومية — تُهيَّأ بعد إقلاع الواجهة، وأي خطأ لا يُعطّل التطبيق
+  _setupNotifications();
+}
+
+Future<void> _setupNotifications() async {
+  try {
+    await NotificationService.init();
+    await NotificationService.requestPermission();
+    await NotificationService.reschedule();
+  } catch (e) {
+    debugPrint('Notifications setup failed: $e');
+  }
 }
 
 class KhatmaApp extends StatelessWidget {
