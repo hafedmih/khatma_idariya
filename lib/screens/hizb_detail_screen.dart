@@ -268,19 +268,19 @@ class _ActionRow extends StatelessWidget {
           child: _ActionBtn(
             icon:    Icons.picture_as_pdf_rounded,
             label:   'اقرأ',
-            sub:     'Google Drive',
+            sub:     'المصحف',
             color:   const Color(0xFF1A73E8),
-            enabled: _pdfUrl.isNotEmpty,
-            onTap:   _pdfUrl.isNotEmpty ? () => _openPdf(context) : null,
+            enabled: true,
+            onTap:   () => _openPdf(context),
           ),
         ),
       ],
     );
   }
 
-  // روابط مدمجة: السيرفر أولاً، ثم ahzab.json احتياطياً
+  // رابط يوتيوب مدمج: السيرفر أولاً، ثم ahzab.json احتياطياً
+  // (ملف PDF لم يعد رابطاً — يُقرأ محلياً من assets/pdf/<number>.pdf)
   String get _ytUrl  => (links?.youtube.isNotEmpty == true) ? links!.youtube : hizb.youtube;
-  String get _pdfUrl => (links?.pdf.isNotEmpty     == true) ? links!.pdf     : hizb.pdf;
 
   // يوتيوب → يفتح داخل التطبيق بمتصفح مدمج (مع الفيديو)
   void _launchExternal(BuildContext context, String url) {
@@ -301,7 +301,7 @@ class _ActionRow extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (_) => PdfViewerScreen(
-          url:        _pdfUrl,
+          hizbNumber: hizb.number,
           title:      'الحزب ${hizb.number}',
           youtubeUrl: _ytUrl,
           hizbLinks:  links,

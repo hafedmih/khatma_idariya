@@ -503,7 +503,7 @@ class _AllHizbsScreen extends StatelessWidget {
           final hizb = ahzab[i];
           final lnk  = links[hizb.number];
           final hasYt  = lnk?.youtube.isNotEmpty == true || hizb.youtube.isNotEmpty;
-          final hasPdf = lnk?.pdf.isNotEmpty == true || hizb.pdf.isNotEmpty;
+          const hasPdf = true; // كل حزب له PDF محلي في assets/pdf/<number>.pdf
 
           return GestureDetector(
             onTap: () => _openDetail(context, hizb),

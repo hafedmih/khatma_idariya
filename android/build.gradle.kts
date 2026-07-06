@@ -19,6 +19,16 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// ارفع compileSdk لكل وحدات الإضافات (مكتبات) لأن تبعية exifinterface 1.4.1
+// (التي يجرّها pdfx) تتطلب أن تُبنى الوحدات على compileSdk 34+
+subprojects {
+    val bumpCompileSdk = {
+        (extensions.findByName("android") as? com.android.build.api.dsl.LibraryExtension)
+            ?.let { it.compileSdk = 36 }
+    }
+    if (state.executed) bumpCompileSdk() else afterEvaluate { bumpCompileSdk() }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

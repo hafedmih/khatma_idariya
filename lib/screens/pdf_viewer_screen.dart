@@ -1,19 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:pdfx/pdfx.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../theme/app_theme.dart';
 import '../services/links_service.dart';
 
 class PdfViewerScreen extends StatefulWidget {
-  final String     url;
+  final int        hizbNumber; // يُحمَّل PDF من assets/pdf/<hizbNumber>.pdf
   final String     title;
   final String?    youtubeUrl;
   final HizbLinks? hizbLinks; // لأوقات الصفحات
 
   const PdfViewerScreen({
     super.key,
-    required this.url,
+    required this.hizbNumber,
     required this.title,
     this.youtubeUrl,
     this.hizbLinks,
@@ -25,9 +26,11 @@ class PdfViewerScreen extends StatefulWidget {
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // ── PDF ────────────────────────────────────────────────
-  late final WebViewController _pdfCtrl;
-  bool _loading  = true;
-  int  _progress = 0;
+  late final PdfController _pdfCtrl;
+  bool _loading   = true;
+  int  _pageCount = 0;
+
+  String get _assetPath => 'assets/pdf/${widget.hizbNumber}.pdf';
 
   // ── Audio ──────────────────────────────────────────────
   WebViewController? _audioCtrl;
@@ -50,21 +53,28 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
 
-  // ── PDF WebView ────────────────────────────────────────
+  // ── PDF محلي من assets ─────────────────────────────────
   void _initPdf() {
-    _pdfCtrl = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(AppTheme.background)
-      ..setNavigationDelegate(NavigationDelegate(
-        onProgress:         (p) => setState(() { _progress = p; _loading = p < 100; }),
-        onPageFinished:     (_) => setState(() => _loading = false),
-        onWebResourceError: (_) => setState(() => _loading = false),
-      ))
-      ..loadRequest(Uri.parse(_toViewerUrl(widget.url)));
+    _pdfCtrl = PdfController(
+      document: PdfDocument.openAsset(_assetPath),
+      initialPage: 1,
+    );
   }
 
+  // انتقال الصفحة عبر أزرار الشريط → يحرّك ملف PDF فعلياً،
+  // ومزامنة الصوت تُنفَّذ في _onPageChanged
   void _goToPage(int page) {
     if (page < 1) return;
+    if (_pageCount > 0 && page > _pageCount) return;
+    _pdfCtrl.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  // يُستدعى عند تغيّر الصفحة (بالسحب أو بالأزرار)
+  void _onPageChanged(int page) {
     setState(() => _currentPage = page);
     final links = widget.hizbLinks;
     // لا تتحرك إلى الثانية 0 إذا لم تكن هناك بيانات — فقط غيّر رقم الصفحة
@@ -121,18 +131,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void dispose() {
     _loopTimer?.cancel();
+    _pdfCtrl.dispose();
     super.dispose();
-  }
-
-  String _toViewerUrl(String raw) {
-    final uri = Uri.parse(raw);
-    if (uri.host.contains('drive.google.com') &&
-        uri.queryParameters.containsKey('id')) {
-      return 'https://drive.google.com/file/d/${uri.queryParameters['id']!}/preview';
-    }
-    final m = RegExp(r'/file/d/([^/]+)').firstMatch(uri.path);
-    if (m != null) return 'https://drive.google.com/file/d/${m.group(1)!}/preview';
-    return raw;
   }
 
   // ── Audio: IFrame Player API officielle de YouTube ────────
@@ -268,16 +268,18 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 22),
-            onPressed: () => _pdfCtrl.reload(),
+            onPressed: () {
+              setState(() => _loading = true);
+              _pdfCtrl.loadDocument(PdfDocument.openAsset(_assetPath));
+            },
           ),
         ],
         bottom: _loading
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(3),
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(3),
                 child: LinearProgressIndicator(
-                  value: _progress / 100,
                   backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation(Colors.white),
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
                 ),
               )
             : null,
@@ -288,7 +290,27 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
           Expanded(
             child: Stack(
               children: [
-                Positioned.fill(child: WebViewWidget(controller: _pdfCtrl)),
+                Positioned.fill(
+                  child: PdfView(
+                    controller: _pdfCtrl,
+                    scrollDirection: Axis.horizontal,
+                    onPageChanged: _onPageChanged,
+                    onDocumentLoaded: (doc) => setState(() {
+                      _pageCount = doc.pagesCount;
+                      _loading   = false;
+                    }),
+                    onDocumentError: (_) => setState(() => _loading = false),
+                    builders: PdfViewBuilders<DefaultBuilderOptions>(
+                      options: const DefaultBuilderOptions(),
+                      documentLoaderBuilder: (_) => const Center(
+                        child: CircularProgressIndicator(color: AppTheme.primary),
+                      ),
+                      pageLoaderBuilder: (_) => const Center(
+                        child: CircularProgressIndicator(color: AppTheme.primary),
+                      ),
+                    ),
+                  ),
+                ),
                 if (hasAudio)
                   Positioned(
                     left: 0, top: 0, width: 1, height: 1,
@@ -304,6 +326,7 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
               playing:     _playing,
               ready:       _audioReady,
               currentPage: _currentPage,
+              pageCount:   _pageCount,
               looping:     _looping,
               onToggle:    _togglePlay,
               onBack:      () => _seekBy(-10),
@@ -323,6 +346,7 @@ class _AudioBar extends StatelessWidget {
   final bool         playing;
   final bool         ready;
   final int          currentPage;
+  final int          pageCount;
   final bool         looping;
   final VoidCallback onToggle;
   final VoidCallback onBack;
@@ -335,6 +359,7 @@ class _AudioBar extends StatelessWidget {
     required this.playing,
     required this.ready,
     required this.currentPage,
+    required this.pageCount,
     required this.looping,
     required this.onToggle,
     required this.onBack,
@@ -415,7 +440,7 @@ class _AudioBar extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.chevron_right_rounded, color: Colors.white60),
                   iconSize: 24,
-                  onPressed: ready && currentPage > 1 ? onPagePrev : null,
+                  onPressed: currentPage > 1 ? onPagePrev : null,
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
@@ -429,7 +454,9 @@ class _AudioBar extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.chevron_left_rounded, color: Colors.white60),
                   iconSize: 24,
-                  onPressed: ready ? onPageNext : null,
+                  onPressed: (pageCount == 0 || currentPage < pageCount)
+                      ? onPageNext
+                      : null,
                 ),
               ],
             ),

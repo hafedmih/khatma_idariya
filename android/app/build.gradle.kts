@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.khatma_idariya"
-    compileSdk = flutter.compileSdkVersion
+    // pdfx transitive deps (exifinterface 1.4.1) require compileSdk 34+
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

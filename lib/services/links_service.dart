@@ -1,9 +1,9 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'youtube_service.dart';
 
 // ═══════════════════════════════════════════════════════════
-//  LinksService — يجلب روابط يوتيوب/PDF وأوقات الصفحات من Supabase
+//  LinksService — روابط الفيديو من YouTube Data API،
+//  وأوقات الصفحات من Supabase. (لم تعد روابط الفيديو من Supabase)
 // ═══════════════════════════════════════════════════════════
 
 class HizbLinks {
@@ -55,56 +55,44 @@ class LinksService {
   static SupabaseClient get _db => Supabase.instance.client;
 
   // ─────────────────────────────────────────────────────
-  /// يُرجع خريطة رقم الحزب → روابطه (مع أوقات الصفحات)
+  /// يُرجع خريطة رقم الحزب → روابطه (فيديو من يوتيوب + أوقات الصفحات)
   static Future<Map<int, HizbLinks>> load() async {
     if (_cache != null) return _cache!;
 
+    // 1) روابط الفيديو من YouTube Data API (بدل Supabase)
+    final youtube = await YoutubeService.load();
+
+    // 2) أوقات الصفحات من Supabase (اختياري — إن توفّر الجدول)
+    final times = <int, List<int>>{};
     try {
-      // جلب الروابط
       final rows = await _db
-          .from('hizb_links')
-          .select('hizb, youtube, pdf')
-          .order('hizb') as List<dynamic>;
-
-      final map = <int, HizbLinks>{
-        for (final j in rows)
-          (j['hizb'] as int): HizbLinks.fromJson(j as Map<String, dynamic>)
-      };
-
-      // جلب أوقات الصفحات ودمجها
-      try {
-        final times = await _db
-            .from('hizb_page_times')
-            .select('hizb, page_times')
-            as List<dynamic>;
-
-        for (final t in times) {
-          final h = t['hizb'] as int;
-          if (map.containsKey(h)) {
-            final pts = (t['page_times'] as List<dynamic>)
-                .map((e) => (e as num).toInt()).toList();
-            map[h] = map[h]!.copyWith(pageTimes: pts);
-          }
-        }
-      } catch (_) {
-        // جدول page_times غير موجود بعد — لا بأس
+          .from('hizb_page_times')
+          .select('hizb, page_times') as List<dynamic>;
+      for (final t in rows) {
+        times[t['hizb'] as int] = (t['page_times'] as List<dynamic>)
+            .map((e) => (e as num).toInt()).toList();
       }
-
-      _cache = map;
     } catch (_) {
-      final str = await rootBundle.loadString('assets/links.json');
-      final raw = jsonDecode(str) as List<dynamic>;
-      _cache = {
-        for (final j in raw)
-          (j['hizb'] as int): HizbLinks.fromJson(j as Map<String, dynamic>)
-      };
+      // جدول page_times غير متاح — لا بأس
     }
 
+    // 3) ادمج حسب رقم الحزب
+    final hizbs = <int>{...youtube.keys, ...times.keys};
+    _cache = {
+      for (final h in hizbs)
+        h: HizbLinks(
+          hizb:      h,
+          youtube:   youtube[h] ?? '',
+          pdf:       '',
+          pageTimes: times[h] ?? const [],
+        ),
+    };
     return _cache!;
   }
 
   static Future<void> refresh() async {
     _cache = null;
+    YoutubeService.invalidateCache();
     await load();
   }
 

@@ -16,6 +16,7 @@ dependencies:
   share_plus: ^9.0.0
   webview_flutter: ^4.14.0
   supabase_flutter: ^2.8.4
+  pdfx: ^2.6.0
 
 dev_dependencies:
   flutter_test:
@@ -28,3 +29,4 @@ flutter:
   assets:
     - assets/ahzab.json
     - assets/links.json
+    - assets/pdf/
