@@ -38,7 +38,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool _audioReady = false;
   int  _currentPage = 1;
   bool _looping    = false;
-  Timer? _loopTimer;
+  Timer? _syncTimer;
+  // يمنع مزامنة الصوت مرة واحدة عندما يكون تغيّر الصفحة ناتجاً عن
+  // التقليب التلقائي (الصوت أصلاً عند بداية الصفحة، فلا حاجة لإعادة seek)
+  bool _suppressSeekOnce = false;
 
   @override
   void initState() {
@@ -73,40 +76,36 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     );
   }
 
-  // يُستدعى عند تغيّر الصفحة (بالسحب أو بالأزرار)
+  // يُستدعى عند تغيّر الصفحة (بالسحب أو بالأزرار):
+  // ينتقل لوقت بداية الصفحة ويبدأ تشغيل صوتها تلقائياً.
+  // أمّا إذا كان التغيّر ناتجاً عن التقليب التلقائي فلا يُعيد المزامنة.
   void _onPageChanged(int page) {
     setState(() => _currentPage = page);
+    if (_suppressSeekOnce) {
+      _suppressSeekOnce = false;
+      return;
+    }
     final links = widget.hizbLinks;
     // لا تتحرك إلى الثانية 0 إذا لم تكن هناك بيانات — فقط غيّر رقم الصفحة
     if (links != null && links.pageTimes.isNotEmpty) {
       final targetSec = links.secondsForPage(page);
-      _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($targetSec,true);');
+      _audioCtrl?.runJavaScript('if(ytP){ytP.seekTo($targetSec,true);ytP.playVideo();}');
     }
-    if (_looping) _startLoopTimer();
   }
 
   void _toggleLoop() {
     setState(() => _looping = !_looping);
-    if (_looping) {
-      _startLoopTimer();
-    } else {
-      _loopTimer?.cancel();
-      _loopTimer = null;
-    }
   }
 
-  void _startLoopTimer() {
-    _loopTimer?.cancel();
+  // مؤقّت يتابع وقت الصوت أثناء التشغيل: يقلّب الصفحات تلقائياً
+  // أو يكرّر الصفحة الحالية عند تفعيل التكرار
+  void _startSyncTimer() {
+    _syncTimer?.cancel();
     final links = widget.hizbLinks;
-    if (links == null) return;
+    if (links == null || links.pageTimes.isEmpty) return;
 
-    final pageStart = links.secondsForPage(_currentPage);
-    final pageEnd   = links.secondsForPage(_currentPage + 1);
-    // إذا لا يوجد وقت للصفحة التالية (آخر صفحة) لا تكرار
-    if (pageEnd <= pageStart) return;
-
-    _loopTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
-      if (!mounted || !_looping) return;
+    _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (!mounted) return;
       // اجلب الوقت الحالي من المشغّل
       await _audioCtrl?.runJavaScript(
         'FlutterBridge.postMessage("time:" + Math.floor(ytP ? ytP.getCurrentTime() : 0));',
@@ -115,22 +114,35 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   void _handleTimeMessage(String msg) {
-    if (!_looping) return;
     final secs = int.tryParse(msg.replaceFirst('time:', ''));
     if (secs == null) return;
-    final links    = widget.hizbLinks;
-    if (links == null) return;
-    final pageEnd  = links.secondsForPage(_currentPage + 1);
-    final pageStart = links.secondsForPage(_currentPage);
-    if (pageEnd > pageStart && secs >= pageEnd - 1) {
-      // عد لبداية الصفحة
-      _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($pageStart,true);');
+    final links = widget.hizbLinks;
+    if (links == null || links.pageTimes.isEmpty) return;
+
+    final curStart  = links.secondsForPage(_currentPage);
+    final nextStart = links.secondsForPage(_currentPage + 1);
+    // لا يوجد وقت للصفحة التالية (آخر صفحة أو بيانات ناقصة)
+    final hasNext = nextStart > curStart;
+
+    if (_looping) {
+      // ابقَ داخل الصفحة الحالية
+      if (hasNext && secs >= nextStart - 1) {
+        _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($curStart,true);');
+      }
+      return;
+    }
+
+    // تقليب تلقائي: إذا بلغ الصوت بداية الصفحة التالية انتقل إليها
+    // (نتجاهل النبضة إذا كان هناك تقليب معلّق أصلاً)
+    if (hasNext && secs >= nextStart && !_suppressSeekOnce) {
+      _suppressSeekOnce = true; // الصوت أصلاً عند بداية الصفحة التالية
+      _goToPage(_currentPage + 1);
     }
   }
 
   @override
   void dispose() {
-    _loopTimer?.cancel();
+    _syncTimer?.cancel();
     _pdfCtrl.dispose();
     super.dispose();
   }
@@ -201,9 +213,11 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
           switch (m) {
             case 'playing':
               setState(() { _playing = true; _audioReady = true; });
+              _startSyncTimer();
             case 'paused':
             case 'ended':
               setState(() => _playing = false);
+              _syncTimer?.cancel();
           }
         },
       );
