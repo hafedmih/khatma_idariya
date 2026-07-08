@@ -1,0 +1,68 @@
+workflows:
+  ios-release-build:
+    name: iOS App Store 17
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+
+    # --- ADDED INTEGRATIONS BLOCK ---
+    integrations:
+      app_store_connect: "Codemagic" # <--- Replace with your exact API Key Name from Codemagic!
+    # --------------------------------
+
+    environment:
+      flutter: stable
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hafedmih.khatma
+
+    scripts:
+      - name: 1. Get Flutter Packages
+        script: |
+          flutter config --no-enable-swift-package-manager
+          flutter clean
+          flutter pub get
+
+      - name: 2. Upgrade Project and Fix iOS 14
+        script: |
+          # Generate the Podfile safely without checking for certificates
+          flutter build ios --config-only --no-codesign
+          
+          # FIX THE CRASH: Force EVERY target in the Xcode project to exactly iOS 14.0
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = .*/IPHONEOS_DEPLOYMENT_TARGET = 14.0;/g' ios/Runner.xcodeproj/project.pbxproj
+          
+          # Force the Podfile to iOS 14.0 so Google Maps installs successfully
+          if [ -f "ios/Podfile" ]; then
+            sed -i '' "s/^# platform :ios.*/platform :ios, '14.0'/" ios/Podfile
+            sed -i '' "s/^platform :ios.*/platform :ios, '14.0'/" ios/Podfile
+          fi
+
+      - name: 3. Initialize Keychain
+        script: |
+          # Create the secure vault on the Mac
+          keychain initialize
+
+      - name: 4. Fetch Automatic Signing Files
+        script: |
+          # Automatically connect to Apple, create/download the Certificate & Profile, and lock them in the vault
+          app-store-connect fetch-signing-files "mr.ahmed.mosquees" --type IOS_APP_STORE --create
+          keychain add-certificates
+
+      - name: 5. Apply Profile to Xcode
+        script: |
+          # Inject the fetched profile into your Xcode project
+          xcode-project use-profiles
+
+      - name: 6. Build iOS IPA
+        script: |
+          # Build the final App Store archive!
+          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
