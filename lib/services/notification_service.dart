@@ -101,23 +101,6 @@ class NotificationService {
     await ios?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
-  // ── إشعار تجريبي فوري (للتحقق من عمل التذكيرات) ─────────
-  static Future<void> showTest() async {
-    if (!_initialized) await init();
-    await requestPermission();
-    const details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: 'تذكيرات يومية بقراءة ورد القرآن',
-        importance: Importance.high,
-        priority:   Priority.high,
-      ),
-      iOS: DarwinNotificationDetails(),
-    );
-    await _plugin.show(999, _appName, 'إشعار تجريبي — التذكيرات تعمل ✅', details);
-  }
-
   // ── الإعدادات (SharedPreferences) ──────────────────────
   static Future<bool> masterEnabled() async {
     final p = await SharedPreferences.getInstance();
@@ -141,6 +124,23 @@ class NotificationService {
     await reschedule();
   }
 
+  /// وقت التذكير الحالي (مخصّص إن وُجد، وإلا الوقت الافتراضي) — [ساعة, دقيقة]
+  static Future<List<int>> timeOf(ReminderSlot r) async {
+    final p = await SharedPreferences.getInstance();
+    return [
+      p.getInt('${r.prefKey}_h') ?? r.hour,
+      p.getInt('${r.prefKey}_m') ?? r.minute,
+    ];
+  }
+
+  /// تعيين وقت مخصّص لتذكير ثم إعادة الجدولة
+  static Future<void> setTime(ReminderSlot r, int hour, int minute) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('${r.prefKey}_h', hour);
+    await p.setInt('${r.prefKey}_m', minute);
+    await reschedule();
+  }
+
   // ── إعادة الجدولة حسب الإعدادات الحالية ────────────────
   static Future<void> reschedule() async {
     if (!_initialized) await init();
@@ -153,11 +153,13 @@ class NotificationService {
     for (final r in reminders) {
       final on = p.getBool(r.prefKey) ?? true;
       if (!on) continue;
-      await _schedule(r);
+      final h = p.getInt('${r.prefKey}_h') ?? r.hour;
+      final m = p.getInt('${r.prefKey}_m') ?? r.minute;
+      await _schedule(r, h, m);
     }
   }
 
-  static Future<void> _schedule(ReminderSlot r) async {
+  static Future<void> _schedule(ReminderSlot r, int hour, int minute) async {
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -173,7 +175,7 @@ class NotificationService {
       r.id,
       _appName,
       r.body,
-      _nextInstanceOf(r.hour, r.minute),
+      _nextInstanceOf(hour, minute),
       details,
       // تنبيه دقيق حتى في وضع توفير الطاقة (Doze) — ضروري لموثوقية التذكير
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,

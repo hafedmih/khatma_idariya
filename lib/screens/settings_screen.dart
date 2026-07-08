@@ -16,6 +16,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _master = true;
   final Map<String, bool> _reminders = {};
+  final Map<String, TimeOfDay> _times = {};
   bool _loading = true;
 
   @override
@@ -26,17 +27,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final master = await NotificationService.masterEnabled();
-    final map = <String, bool>{};
+    final enabled = <String, bool>{};
+    final times = <String, TimeOfDay>{};
     for (final r in NotificationService.reminders) {
-      map[r.prefKey] = await NotificationService.reminderEnabled(r.prefKey);
+      enabled[r.prefKey] = await NotificationService.reminderEnabled(r.prefKey);
+      final t = await NotificationService.timeOf(r);
+      times[r.prefKey] = TimeOfDay(hour: t[0], minute: t[1]);
     }
     if (!mounted) return;
     setState(() {
       _master    = master;
-      _reminders..clear()..addAll(map);
+      _reminders..clear()..addAll(enabled);
+      _times..clear()..addAll(times);
       _loading   = false;
     });
   }
+
+  Future<void> _pickTime(ReminderSlot r) async {
+    final current = _times[r.prefKey] ?? TimeOfDay(hour: r.hour, minute: r.minute);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: current,
+      helpText: 'اختر وقت ${r.label}',
+      builder: (ctx, child) =>
+          Directionality(textDirection: TextDirection.rtl, child: child!),
+    );
+    if (picked == null) return;
+    setState(() => _times[r.prefKey] = picked);
+    await NotificationService.setTime(r, picked.hour, picked.minute);
+  }
+
+  String _fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Future<void> _toggleMaster(bool v) async {
     setState(() => _master = v);
@@ -95,29 +117,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.notifications_none_rounded),
-                  label: const Text('إرسال إشعار تجريبي الآن'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primary,
-                    side: const BorderSide(color: AppTheme.primary),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () async {
-                    await NotificationService.showTest();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('أُرسل إشعار تجريبي — تحقّق من شريط الإشعارات'),
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
                 Text(
                   _master
-                      ? 'ستصلك التذكيرات المفعّلة يومياً في أوقاتها.'
+                      ? 'اضغط على الوقت لتغييره. ستصلك التذكيرات المفعّلة يومياً في أوقاتها.'
                       : 'التذكيرات معطّلة. فعّلها لتصلك.',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   textAlign: TextAlign.center,
@@ -129,19 +131,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _reminderTile(ReminderSlot r) {
     final enabled = _reminders[r.prefKey] ?? true;
+    final time = _times[r.prefKey] ?? TimeOfDay(hour: r.hour, minute: r.minute);
     return SwitchListTile(
       activeColor: AppTheme.primary,
       title: Text(r.label, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(r.body),
-      secondary: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppTheme.primary.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
+      // زر تغيير الوقت (اضغط لاختيار وقت مخصّص)
+      secondary: InkWell(
+        onTap: () => _pickTime(r),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.edit_rounded, size: 13, color: AppTheme.primary),
+              const SizedBox(width: 4),
+              Text(_fmt(time),
+                  style: const TextStyle(
+                      color: AppTheme.primary, fontWeight: FontWeight.w700)),
+            ],
+          ),
         ),
-        child: Text(r.timeLabel,
-            style: const TextStyle(
-                color: AppTheme.primary, fontWeight: FontWeight.w700)),
       ),
       value: _master && enabled,
       onChanged: _master ? (v) => _toggleReminder(r.prefKey, v) : null,
