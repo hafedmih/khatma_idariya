@@ -45,7 +45,7 @@ workflows:
       - name: 4. Fetch Automatic Signing Files
         script: |
           # Automatically connect to Apple, create/download the Certificate & Profile, and lock them in the vault
-          app-store-connect fetch-signing-files "mr.ahmed.mosquees" --type IOS_APP_STORE --create
+          app-store-connect fetch-signing-files "com.hafedmih.khatma" --type IOS_APP_STORE --create
           keychain add-certificates
 
       - name: 5. Apply Profile to Xcode
