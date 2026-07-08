@@ -177,10 +177,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (shot != null) {
-      await Share.shareXFiles([shot],
-          text: text, subject: 'القرآن الكريم - ختمة الإدارة');
+      await SharePlus.instance.share(ShareParams(
+          files: [shot], text: text, subject: 'القرآن الكريم - ختمة الإدارة'));
     } else {
-      await Share.share(text, subject: 'القرآن الكريم - ختمة الإدارة');
+      await SharePlus.instance.share(
+          ShareParams(text: text, subject: 'القرآن الكريم - ختمة الإدارة'));
     }
   }
 
