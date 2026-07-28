@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.hafedmih.khatma"
-    // pdfx transitive deps (exifinterface 1.4.1) require compileSdk 34+
+    // AndroidX core 1.17.0 (transitive) requires compileSdk 36
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 

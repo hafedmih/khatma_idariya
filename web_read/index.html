@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1A5C38">
+  <meta name="description" content="ورد اليوم من الختمة الإدارية — برنامج أهل شنقيط لختم القرآن كل ٢١ يوماً. اقرأ واستمع للأحزاب المقررة.">
+  <title>القرآن الكريم - ختمة الإدارة</title>
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="appbar">
+    <span class="title">القرآن الكريم - ختمة الإدارة</span>
+    <span class="actions">
+      <button title="مشاركة ورد اليوم" onclick="shareWird()">⤴</button>
+      <button title="اختر تاريخاً" onclick="openDatePicker()">📅</button>
+    </span>
+  </header>
+
+  <main id="app">
+    <div class="center-screen"><div class="spinner"></div><p>جارٍ التحميل...</p></div>
+  </main>
+
+  <!-- منتقي التاريخ المخفي -->
+  <input type="date" id="date-input" class="datepick"
+         style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px"
+         min="2020-01-01" max="2035-12-31" onchange="onDateInput(event)">
+
+  <!-- نافذة القارئ / المشغّل -->
+  <div class="modal-overlay" id="modal" onclick="closeModal(event)">
+    <div class="modal">
+      <div class="bar">
+        <span class="mt"></span>
+        <a class="newtab" target="_blank" rel="noopener">فتح في نافذة جديدة ↗</a>
+        <button data-close title="إغلاق">✕</button>
+      </div>
+      <div class="frame"></div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="calculator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
