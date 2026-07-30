@@ -44,20 +44,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      // تحميل الأحزاب والروابط بشكل متوازٍ
-      final results = await Future.wait([
-        HizbService.loadAhzab(),
-        LinksService.load(),
-      ]);
+      // الأحزاب من الـ assets المحلية (فوري) — لا نُعلّق الواجهة على الشبكة
+      final ahzab = await HizbService.loadAhzab();
       if (!mounted) return;
       setState(() {
-        _ahzab     = results[0] as List<Hizb>;
-        _links     = results[1] as Map<int, HizbLinks>;
+        _ahzab     = ahzab;
         _todayNums = KhatmaCalculator.getHizbsForDate(_date);
         _loading   = false;
       });
+      // الروابط (يوتيوب + Supabase) في الخلفية مع مهلة — لا تُعطّل الإقلاع
+      _loadLinks();
     } catch (e) {
+      if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  // تحميل الروابط بلا حجب الواجهة؛ عند الفشل/المهلة تكفي الروابط الاحتياطية من ahzab.json
+  Future<void> _loadLinks() async {
+    try {
+      final links = await LinksService.load()
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      setState(() => _links = links);
+    } catch (_) {
+      // تجاهُل: youtube من ahzab.json و PDF محلي — التطبيق يعمل دون هذه الروابط
     }
   }
 

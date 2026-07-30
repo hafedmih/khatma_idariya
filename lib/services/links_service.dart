@@ -67,7 +67,8 @@ class LinksService {
     try {
       final rows = await _db
           .from('hizb_page_times')
-          .select('hizb, page_times') as List<dynamic>;
+          .select('hizb, page_times')
+          .timeout(const Duration(seconds: 6)) as List<dynamic>;
       for (final t in rows) {
         times[t['hizb'] as int] = (t['page_times'] as List<dynamic>)
             .map((e) => (e as num).toInt()).toList();

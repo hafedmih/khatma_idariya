@@ -28,7 +28,8 @@ class YoutubeService {
     final map = <int, YtVideo>{};
     try {
       String? pageToken;
-      final client = HttpClient();
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 8);
       try {
         // playlistItems محدودة بـ 50 عنصراً لكل صفحة → نتنقّل بالصفحات
         do {
@@ -44,11 +45,14 @@ class YoutubeService {
             },
           );
 
-          final req  = await client.getUrl(uri);
-          final resp = await req.close();
+          final req  = await client.getUrl(uri).timeout(const Duration(seconds: 8));
+          final resp = await req.close().timeout(const Duration(seconds: 10));
           if (resp.statusCode != 200) break;
 
-          final body = await resp.transform(utf8.decoder).join();
+          final body = await resp
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 10));
           final json = jsonDecode(body) as Map<String, dynamic>;
 
           for (final item in (json['items'] as List<dynamic>? ?? [])) {
