@@ -77,7 +77,7 @@ class LinksService {
       // جدول page_times غير متاح — لا بأس
     }
 
-    // 3) ادمج حسب رقم الحزب — أوقات يوتيوب أولاً ثم Supabase
+    // 3) ادمج حسب رقم الحزب — أوقات جدول Supabase أولاً ثم وصف يوتيوب (احتياطياً)
     final hizbs = <int>{...youtube.keys, ...times.keys};
     _cache = {
       for (final h in hizbs)
@@ -85,9 +85,9 @@ class LinksService {
           hizb:      h,
           youtube:   youtube[h]?.url ?? '',
           pdf:       '',
-          pageTimes: (youtube[h]?.pageTimes.isNotEmpty ?? false)
-              ? youtube[h]!.pageTimes
-              : (times[h] ?? const []),
+          pageTimes: (times[h]?.isNotEmpty ?? false)
+              ? times[h]!
+              : (youtube[h]?.pageTimes ?? const []),
         ),
     };
     return _cache!;

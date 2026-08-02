@@ -47,17 +47,17 @@ class NotificationService {
     ReminderSlot(
       id: 1, hour: 5, minute: 0, prefKey: 'notif_0500',
       label: 'تذكير الصباح',
-      body:  'ابدأ يومك بورد من كتاب الله 🌅',
+      body:  'ابدأ يومك بورد من كتاب الله',
     ),
     ReminderSlot(
       id: 2, hour: 18, minute: 0, prefKey: 'notif_1800',
       label: 'تذكير المساء',
-      body:  'لا تنسَ وردك من القرآن الكريم 🌇',
+      body:  'لا تنسَ وردك من القرآن الكريم',
     ),
     ReminderSlot(
       id: 3, hour: 20, minute: 0, prefKey: 'notif_2000',
       label: 'تذكير الليل',
-      body:  'أكمل وردك اليومي قبل نهاية اليوم 🌙',
+      body:  'أكمل وردك اليومي قبل نهاية اليوم',
     ),
   ];
 

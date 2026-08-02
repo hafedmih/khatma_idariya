@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
+import '../services/app_prefs.dart';
+import '../services/account_service.dart';
 import '../theme/app_theme.dart';
+import 'blocked_users_screen.dart';
 
 // ═══════════════════════════════════════════════════════════
 //  شاشة الإعدادات — التحكم بتذكيرات الورد
@@ -15,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _master = true;
+  bool _autoRecite = false;
   final Map<String, bool> _reminders = {};
   final Map<String, TimeOfDay> _times = {};
   bool _loading = true;
@@ -27,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final master = await NotificationService.masterEnabled();
+    final autoRecite = await AppPrefs.autoRecite();
     final enabled = <String, bool>{};
     final times = <String, TimeOfDay>{};
     for (final r in NotificationService.reminders) {
@@ -36,7 +41,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (!mounted) return;
     setState(() {
-      _master    = master;
+      _master     = master;
+      _autoRecite = autoRecite;
       _reminders..clear()..addAll(enabled);
       _times..clear()..addAll(times);
       _loading   = false;
@@ -89,7 +95,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
               children: [
                 _sectionTitle('تذكيرات الورد'),
                 const SizedBox(height: 8),
@@ -124,6 +131,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 22),
+                _sectionTitle('التلاوة'),
+                const SizedBox(height: 8),
+                _card(
+                  child: SwitchListTile(
+                    activeColor: AppTheme.primary,
+                    title: const Text('بدء التلاوة تلقائياً مع الحزب',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: const Text('عند تعطيله لا يبدأ الصوت تلقائياً؛ اضغط زر التشغيل في كل صفحة'),
+                    secondary: const Icon(Icons.play_circle_outline_rounded, color: AppTheme.primary),
+                    value: _autoRecite,
+                    onChanged: (v) async {
+                      setState(() => _autoRecite = v);
+                      await AppPrefs.setAutoRecite(v);
+                    },
+                  ),
+                ),
+                if (AccountService.isLoggedIn) ...[
+                  const SizedBox(height: 22),
+                  _sectionTitle('الخصوصية والأمان'),
+                  const SizedBox(height: 8),
+                  _card(
+                    child: ListTile(
+                      leading: const Icon(Icons.block_rounded, color: AppTheme.primary),
+                      title: const Text('المستخدمون المحظورون',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('عرض من حظرتهم ورفع الحظر'),
+                      trailing: const Icon(Icons.chevron_left_rounded, color: AppTheme.textLow),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
     );

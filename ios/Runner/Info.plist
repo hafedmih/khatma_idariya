@@ -68,5 +68,15 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>يحتاج التطبيق للوصول إلى الصور لاختيار صورة ملفك الشخصي.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>يحتاج التطبيق للكاميرا لالتقاط صورة ملفك الشخصي.</string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>audio</string>
+		</array>
 	</dict>
 </plist>

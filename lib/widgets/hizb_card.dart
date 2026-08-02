@@ -7,6 +7,9 @@ class HizbCard extends StatelessWidget {
   final int    dayIndex;   // ١، ٢، أو ٣ (ترتيب الحزب في اليوم)
   final VoidCallback onTap;
   final VoidCallback? onYoutube;
+  final bool   hasAudio;     // تتوفّر تلاوة mp3
+  final bool   hasPageTimes; // يتوفّر تقسيم الصفحات (مزامنة)
+  final bool   isDownloaded; // التلاوة منزّلة (تعمل دون إنترنت)
 
   const HizbCard({
     super.key,
@@ -14,6 +17,9 @@ class HizbCard extends StatelessWidget {
     required this.dayIndex,
     required this.onTap,
     this.onYoutube,
+    this.hasAudio = false,
+    this.hasPageTimes = false,
+    this.isDownloaded = false,
   });
 
   List<Color> get _gradient =>
@@ -45,7 +51,13 @@ class HizbCard extends StatelessWidget {
                 // ───── رقم الحزب ─────
                 _HizbBadge(number: hizb.number, gradient: _gradient),
                 // ───── المحتوى ─────
-                Expanded(child: _Content(hizb: hizb, onYoutube: onYoutube)),
+                Expanded(child: _Content(
+                  hizb: hizb,
+                  onYoutube: onYoutube,
+                  hasAudio: hasAudio,
+                  hasPageTimes: hasPageTimes,
+                  isDownloaded: isDownloaded,
+                )),
               ],
             ),
           ),
@@ -99,7 +111,16 @@ class _HizbBadge extends StatelessWidget {
 class _Content extends StatelessWidget {
   final Hizb hizb;
   final VoidCallback? onYoutube;
-  const _Content({required this.hizb, this.onYoutube});
+  final bool hasAudio;
+  final bool hasPageTimes;
+  final bool isDownloaded;
+  const _Content({
+    required this.hizb,
+    this.onYoutube,
+    this.hasAudio = false,
+    this.hasPageTimes = false,
+    this.isDownloaded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -122,24 +143,32 @@ class _Content extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          // ── النطاق ──
-          _RangePill(hizb: hizb),
-          const SizedBox(height: 10),
-          // ── الأيقونات ──
+          // ── النطاق + علامات الحالة ──
           Row(
             children: [
-              const Icon(Icons.view_list_rounded, size: 14, color: AppTheme.textLow),
-              const SizedBox(width: 4),
-              Text('٨ أثمان', style: Theme.of(context).textTheme.bodySmall),
+              Flexible(child: _RangePill(hizb: hizb)),
               const Spacer(),
-              if (hizb.hasYoutube && onYoutube != null)
-                _QuickBtn(
-                  icon: Icons.play_circle_outline_rounded,
-                  color: const Color(0xFFCC0000),
-                  onTap: onYoutube!,
+              // التلاوة منزّلة (تعمل دون إنترنت)
+              if (isDownloaded)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Icon(Icons.offline_pin_rounded,
+                      color: Color(0xFF2E7D32), size: 18),
                 ),
-              const SizedBox(width: 6),
-              const Icon(Icons.chevron_right_rounded, size: 18, color: AppTheme.textLow),
+              // تتوفّر تلاوة mp3 (لا تُعرض إن كانت منزّلة — معلومة مكرّرة)
+              if (hasAudio && !isDownloaded)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Icon(Icons.play_circle_outline_rounded,
+                      color: Colors.red, size: 18),
+                ),
+              // يتوفّر تقسيم الصفحات (مزامنة الصوت)
+              if (hasPageTimes)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Icon(Icons.auto_stories_rounded,
+                      color: Color(0xFF1A73E8), size: 18),
+                ),
             ],
           ),
         ],

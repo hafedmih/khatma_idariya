@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "247278142981",
+    "project_id": "khatma-e1f43",
+    "storage_bucket": "khatma-e1f43.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:247278142981:android:2b21a49302fe6cbadc3e6c",
+        "android_client_info": {
+          "package_name": "com.hafedmih.khatma"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDR1H_1u-Zilq_2LAmZgryVAKb3A6WnZ6I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

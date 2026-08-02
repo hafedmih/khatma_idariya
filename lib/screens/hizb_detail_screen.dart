@@ -4,6 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../models/hizb.dart';
 import '../services/links_service.dart';
+import '../services/audio_download_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/thumn_tile.dart';
 import 'pdf_viewer_screen.dart';
@@ -27,13 +28,15 @@ class HizbDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                _OpeningVerseCard(hizb: hizb),
+                _OpeningVerseCard(hizb: hizb, links: links),
                 const SizedBox(height: 12),
                 _RangeCard(hizb: hizb),
+                const SizedBox(height: 12),
+                _HizbStatusRow(hizb: hizb, links: links),
                 const SizedBox(height: 16),
                 _ActionRow(hizb: hizb, links: links),
                 const SizedBox(height: 28),
-                _AthmanSection(hizb: hizb),
+                _AthmanSection(hizb: hizb, links: links),
               ]),
             ),
           ),
@@ -83,6 +86,84 @@ class HizbDetailScreen extends StatelessWidget {
       ],
     );
   }
+}
+
+// ─────────────────────────────────────────────
+// صفّ حالة الحزب: التلاوة متاحة / منزّلة دون إنترنت / تقسيم الصفحات
+class _HizbStatusRow extends StatefulWidget {
+  final Hizb hizb;
+  final HizbLinks? links;
+  const _HizbStatusRow({required this.hizb, this.links});
+
+  @override
+  State<_HizbStatusRow> createState() => _HizbStatusRowState();
+}
+
+class _HizbStatusRowState extends State<_HizbStatusRow> {
+  bool _downloaded = false;
+  bool _hasAudio = false;
+  bool _cachedPageTimes = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final down = await AudioDownloadService.isDownloaded(widget.hizb.number);
+    final set  = await AudioDownloadService.remoteAudioSet();
+    final cached = await AudioDownloadService.cachedPageTimes(widget.hizb.number);
+    if (!mounted) return;
+    setState(() {
+      _downloaded = down;
+      _hasAudio   = down || set.contains(widget.hizb.number);
+      _cachedPageTimes = cached.isNotEmpty;
+      _loaded     = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPageTimes =
+        (widget.links?.pageTimes.isNotEmpty ?? false) || _cachedPageTimes;
+    if (!_loaded && !hasPageTimes) return const SizedBox.shrink();
+
+    final chips = <Widget>[
+      if (_downloaded)
+        _chip(Icons.offline_pin_rounded, const Color(0xFF2E7D32),
+            'منزّلة — تعمل دون إنترنت'),
+      // تلاوة متاحة — لا تُعرض إن كانت منزّلة (معلومة مكرّرة)
+      if (_hasAudio && !_downloaded)
+        _chip(Icons.play_circle_outline_rounded, Colors.red, 'تلاوة متاحة'),
+      if (hasPageTimes)
+        _chip(Icons.auto_stories_rounded, const Color(0xFF1A73E8),
+            'مزامنة الصوت مع الصفحات'),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(spacing: 8, runSpacing: 8, children: chips);
+  }
+
+  Widget _chip(IconData icon, Color color, String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 5),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      );
 }
 
 // ─────────────────────────────────────────────
@@ -157,7 +238,8 @@ class _AppBarBackground extends StatelessWidget {
 // ─────────────────────────────────────────────
 class _OpeningVerseCard extends StatelessWidget {
   final Hizb hizb;
-  const _OpeningVerseCard({required this.hizb});
+  final HizbLinks? links;
+  const _OpeningVerseCard({required this.hizb, this.links});
 
   @override
   Widget build(BuildContext context) {
@@ -251,30 +333,13 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _ActionBtn(
-            icon:    Icons.play_circle_fill_rounded,
-            label:   'استمع',
-            sub:     'يوتيوب',
-            color:   const Color(0xFFCC0000),
-            enabled: _ytUrl.isNotEmpty,
-            onTap:   _ytUrl.isNotEmpty ? () => _launchExternal(context, _ytUrl) : null,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionBtn(
-            icon:    Icons.picture_as_pdf_rounded,
-            label:   'اقرأ',
-            sub:     'المصحف',
-            color:   const Color(0xFF1A73E8),
-            enabled: true,
-            onTap:   () => _openPdf(context),
-          ),
-        ),
-      ],
+    return _ActionBtn(
+      icon:    Icons.picture_as_pdf_rounded,
+      label:   'اقرأ',
+      sub:     'المصحف',
+      color:   const Color(0xFF1A73E8),
+      enabled: true,
+      onTap:   () => _openPdf(context),
     );
   }
 
@@ -371,7 +436,10 @@ class _ActionBtn extends StatelessWidget {
 // ─────────────────────────────────────────────
 class _AthmanSection extends StatelessWidget {
   final Hizb hizb;
-  const _AthmanSection({required this.hizb});
+  final HizbLinks? links;
+  const _AthmanSection({required this.hizb, this.links});
+
+  String get _ytUrl => (links?.youtube.isNotEmpty == true) ? links!.youtube : hizb.youtube;
 
   @override
   Widget build(BuildContext context) {
@@ -401,8 +469,13 @@ class _AthmanSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        // ── القائمة ──
-        ...hizb.athman.map((t) => ThumnTile(thumn: t)),
+        // ── القائمة: كل ثمن اختصار للذهاب إليه للقراءة ──
+        ...hizb.athman.map((t) => ThumnTile(
+              thumn: t,
+              hizbNumber: hizb.number,
+              youtubeUrl: _ytUrl,
+              links: links,
+            )),
       ],
     );
   }

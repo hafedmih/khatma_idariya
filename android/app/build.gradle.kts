@@ -7,6 +7,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase Cloud Messaging — يُطبَّق فقط عند وجود google-services.json
+// (حتى يبقى البناء ناجحاً قبل إعداد Firebase)
+if (project.file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // إعدادات التوقيع للإصدار (من android/key.properties — غير مضمّن في Git)
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")

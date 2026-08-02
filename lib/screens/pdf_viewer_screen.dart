@@ -1,23 +1,31 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../services/links_service.dart';
+import '../services/app_prefs.dart';
+import '../services/audio_download_service.dart';
+import '../services/reading_progress.dart';
+import '../config/audio_config.dart';
 
 class PdfViewerScreen extends StatefulWidget {
   final int        hizbNumber; // يُحمَّل PDF من assets/pdf/<hizbNumber>.pdf
   final String     title;
   final String?    youtubeUrl;
   final HizbLinks? hizbLinks; // لأوقات الصفحات
+  final int        initialPage; // الصفحة المبدئية (لفتح ثمن معيّن)
+  final String?    assetPath;  // مسار PDF مخصّص (سورة الكهف / دعاء الختمة) بلا صوت
 
   const PdfViewerScreen({
     super.key,
-    required this.hizbNumber,
+    this.hizbNumber = 0,
     required this.title,
     this.youtubeUrl,
     this.hizbLinks,
+    this.initialPage = 1,
+    this.assetPath,
   });
 
   @override
@@ -29,245 +37,243 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   late final PdfController _pdfCtrl;
   bool _loading   = true;
   int  _pageCount = 0;
-
-  String get _assetPath => 'assets/pdf/${widget.hizbNumber}.pdf';
-
-  // ── Audio ──────────────────────────────────────────────
-  WebViewController? _audioCtrl;
-  bool _playing    = false;
-  bool _audioReady = false;
   int  _currentPage = 1;
+
+  String get _assetPath => widget.assetPath ?? 'assets/pdf/${widget.hizbNumber}.pdf';
+
+  // ── Audio (MP3 عبر just_audio) ─────────────────────────
+  final AudioPlayer _player = AudioPlayer();
+  bool _isHizb     = false; // حزب له تلاوة (1..60) وليس ملفاً خاصاً
+  bool _hasAudio   = false; // التلاوة متوفّرة (محلياً أو على الخادم)
+  bool _audioReady = false;
+  bool _playing    = false;
   bool _looping    = false;
-  Timer? _syncTimer;
-  // يمنع مزامنة الصوت مرة واحدة عندما يكون تغيّر الصفحة ناتجاً عن
-  // التقليب التلقائي (الصوت أصلاً عند بداية الصفحة، فلا حاجة لإعادة seek)
+  bool _autoRecite = false;
+
+  bool _downloaded = false;
+  bool _downloading = false;
+  double _dlProgress = 0;
+
+  // مزامنة الصفحات مع الصوت (أوقات الصفحات من hizb_page_times)
+  StreamSubscription<Duration>? _posSub;
   bool _suppressSeekOnce = false;
+  List<int> _pageTimes = const []; // للصفحات 2..8 (الصفحة 1 = 0)
+  bool get _hasPageTimes => _pageTimes.isNotEmpty;
+
+  // وقت بداية الصفحة بالثواني
+  int _secForPage(int page) {
+    if (page <= 1) return 0;
+    final idx = page - 2;
+    return (idx >= 0 && idx < _pageTimes.length) ? _pageTimes[idx] : -1;
+  }
+
+  // تحميل أوقات الصفحات: من الروابط، ثم النسخة المحلية (تعمل دون إنترنت)، ثم قاعدة البيانات
+  Future<void> _loadPageTimes() async {
+    _pageTimes = widget.hizbLinks?.pageTimes ?? const [];
+    if (_pageTimes.isNotEmpty) return;
+
+    // 1) نسخة محلية محفوظة عند التنزيل — تُتيح الانتقال بين الصفحات دون إنترنت
+    _pageTimes = await AudioDownloadService.cachedPageTimes(widget.hizbNumber);
+    if (_pageTimes.isNotEmpty) return;
+
+    // 2) من قاعدة البيانات (مع تخزين النتيجة محلياً للاستخدام لاحقاً دون إنترنت)
+    try {
+      final m = await Supabase.instance.client
+          .from('hizb_page_times')
+          .select('page_times')
+          .eq('hizb', widget.hizbNumber)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 6));
+      if (m != null && m['page_times'] != null) {
+        _pageTimes = (m['page_times'] as List).map((e) => (e as num).toInt()).toList();
+        if (_downloaded && _pageTimes.isNotEmpty) {
+          await AudioDownloadService.savePageTimes(widget.hizbNumber, _pageTimes);
+        }
+      }
+    } catch (_) {}
+  }
 
   @override
   void initState() {
     super.initState();
     _initPdf();
-    final yt = widget.youtubeUrl;
-    if (yt != null && yt.isNotEmpty) {
-      final id    = _extractVideoId(yt);
-      final start = _extractStart(yt);
-      if (id != null) _initAudio(id, start);
-    }
+    _isHizb = widget.assetPath == null && AudioConfig.hasAudioFor(widget.hizbNumber);
+    _player.playingStream.listen((p) { if (mounted) setState(() => _playing = p); });
+    if (_isHizb) _setupAudio();
   }
 
-
-  // ── PDF محلي من assets ─────────────────────────────────
-  void _initPdf() {
-    _pdfCtrl = PdfController(
-      document: PdfDocument.openAsset(_assetPath),
-      initialPage: 1,
-    );
-  }
-
-  // انتقال الصفحة عبر أزرار الشريط → يحرّك ملف PDF فعلياً،
-  // ومزامنة الصوت تُنفَّذ في _onPageChanged
-  void _goToPage(int page) {
-    if (page < 1) return;
-    if (_pageCount > 0 && page > _pageCount) return;
-    _pdfCtrl.animateToPage(
-      page,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
-  }
-
-  // يُستدعى عند تغيّر الصفحة (بالسحب أو بالأزرار):
-  // ينتقل لوقت بداية الصفحة ويبدأ تشغيل صوتها تلقائياً.
-  // أمّا إذا كان التغيّر ناتجاً عن التقليب التلقائي فلا يُعيد المزامنة.
-  void _onPageChanged(int page) {
-    setState(() => _currentPage = page);
-    if (_suppressSeekOnce) {
-      _suppressSeekOnce = false;
-      return;
-    }
-    final links = widget.hizbLinks;
-    // لا تتحرك إلى الثانية 0 إذا لم تكن هناك بيانات — فقط غيّر رقم الصفحة
-    if (links != null && links.pageTimes.isNotEmpty) {
-      final targetSec = links.secondsForPage(page);
-      _audioCtrl?.runJavaScript('if(ytP){ytP.seekTo($targetSec,true);ytP.playVideo();}');
-    }
-  }
-
-  void _toggleLoop() {
-    setState(() => _looping = !_looping);
-  }
-
-  // مؤقّت يتابع وقت الصوت أثناء التشغيل: يقلّب الصفحات تلقائياً
-  // أو يكرّر الصفحة الحالية عند تفعيل التكرار
-  void _startSyncTimer() {
-    _syncTimer?.cancel();
-    final links = widget.hizbLinks;
-    if (links == null || links.pageTimes.isEmpty) return;
-
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
-      if (!mounted) return;
-      // اجلب الوقت الحالي من المشغّل
-      await _audioCtrl?.runJavaScript(
-        'FlutterBridge.postMessage("time:" + Math.floor(ytP ? ytP.getCurrentTime() : 0));',
-      );
-    });
-  }
-
-  void _handleTimeMessage(String msg) {
-    final secs = int.tryParse(msg.replaceFirst('time:', ''));
-    if (secs == null) return;
-    final links = widget.hizbLinks;
-    if (links == null || links.pageTimes.isEmpty) return;
-
-    final curStart  = links.secondsForPage(_currentPage);
-    final nextStart = links.secondsForPage(_currentPage + 1);
-    // لا يوجد وقت للصفحة التالية (آخر صفحة أو بيانات ناقصة)
+  // تقليب تلقائي للصفحة عند بلوغ الصوت وقت الصفحة التالية
+  void _onPosition(Duration pos) {
+    if (!_hasPageTimes || !_player.playing) return;
+    final curStart  = _secForPage(_currentPage);
+    final nextStart = _secForPage(_currentPage + 1);
     final hasNext = nextStart > curStart;
-
+    final secs = pos.inSeconds;
     if (_looping) {
-      // ابقَ داخل الصفحة الحالية
       if (hasNext && secs >= nextStart - 1) {
-        _audioCtrl?.runJavaScript('if(ytP)ytP.seekTo($curStart,true);');
+        _player.seek(Duration(seconds: curStart));
       }
       return;
     }
-
-    // تقليب تلقائي: إذا بلغ الصوت بداية الصفحة التالية انتقل إليها
-    // (نتجاهل النبضة إذا كان هناك تقليب معلّق أصلاً)
     if (hasNext && secs >= nextStart && !_suppressSeekOnce) {
-      _suppressSeekOnce = true; // الصوت أصلاً عند بداية الصفحة التالية
+      _suppressSeekOnce = true;
       _goToPage(_currentPage + 1);
     }
   }
 
+  void _initPdf() {
+    _currentPage = widget.initialPage;
+    _pdfCtrl = PdfController(
+      document: PdfDocument.openAsset(_assetPath),
+      initialPage: widget.initialPage,
+    );
+  }
+
+  // تهيئة التلاوة: من الملف المحلي إن كان منزّلاً، وإلا بثّاً من الخادم
+  Future<void> _setupAudio() async {
+    _autoRecite = await AppPrefs.autoRecite();
+    _downloaded = await AudioDownloadService.isDownloaded(widget.hizbNumber);
+    await _loadPageTimes();
+    try {
+      if (_downloaded) {
+        final f = await AudioDownloadService.localFile(widget.hizbNumber);
+        await _player.setFilePath(f.path);
+        _hasAudio = true;
+      } else {
+        final exists = await AudioDownloadService.remoteExists(widget.hizbNumber);
+        if (exists) {
+          await _player.setUrl(AudioConfig.urlFor(widget.hizbNumber));
+          _hasAudio = true;
+        } else {
+          _hasAudio = false; // لم تُرفع تلاوة هذا الحزب بعد
+        }
+      }
+      if (_hasAudio) {
+        _audioReady = true;
+        _posSub = _player.positionStream.listen(_onPosition);
+        if (_autoRecite) _player.play();
+      }
+    } catch (_) {
+      _hasAudio = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _goToPage(int page) {
+    if (page < 1) return;
+    if (_pageCount > 0 && page > _pageCount) return;
+    _pdfCtrl.animateToPage(page,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+
+  void _onPageChanged(int page) {
+    setState(() => _currentPage = page);
+    // حفظ موضع القراءة للأحزاب: إن وصل آخر صفحة فقد اكتملت القراءة → امسح
+    if (_isHizb && widget.hizbNumber >= 1) {
+      if (_pageCount > 0 && page >= _pageCount) {
+        ReadingProgress.clear();
+      } else {
+        ReadingProgress.save(widget.hizbNumber, page);
+      }
+    }
+    // إن كان التغيّر ناتجاً عن التقليب التلقائي فالصوت أصلاً في مكانه
+    if (_suppressSeekOnce) { _suppressSeekOnce = false; return; }
+    // تغيير يدوي: انقل الصوت إلى بداية الصفحة
+    if (_hasPageTimes && _hasAudio) {
+      final t = _secForPage(page);
+      if (t >= 0) _player.seek(Duration(seconds: t));
+    }
+  }
+
+  void _togglePlay() {
+    if (!_hasAudio) return;
+    _playing ? _player.pause() : _player.play();
+  }
+
+  void _seekBy(int seconds) {
+    final pos = _player.position + Duration(seconds: seconds);
+    final dur = _player.duration ?? Duration.zero;
+    _player.seek(pos < Duration.zero ? Duration.zero : (pos > dur ? dur : pos));
+  }
+
+  Future<void> _toggleLoop() async {
+    setState(() => _looping = !_looping);
+    await _player.setLoopMode(_looping ? LoopMode.one : LoopMode.off);
+  }
+
+  // تنزيل تلاوة الحزب الحالي للاستماع دون إنترنت
+  Future<void> _downloadCurrent() async {
+    if (_downloading || _downloaded || !_hasAudio) return;
+    setState(() { _downloading = true; _dlProgress = 0; });
+    final ok = await AudioDownloadService.download(widget.hizbNumber,
+        onProgress: (p) { if (mounted) setState(() => _dlProgress = p); });
+    if (!mounted) return;
+    setState(() { _downloading = false; _downloaded = ok; });
+    if (ok) {
+      // احفظ أوقات الصفحات محلياً ليعمل الانتقال بين الصفحات دون إنترنت
+      if (_pageTimes.isEmpty) await _loadPageTimes();
+      await AudioDownloadService.savePageTimes(widget.hizbNumber, _pageTimes);
+      try {
+        final pos = _player.position;
+        final wasPlaying = _player.playing;
+        final f = await AudioDownloadService.localFile(widget.hizbNumber);
+        await _player.setFilePath(f.path);
+        await _player.seek(pos);
+        if (_looping) await _player.setLoopMode(LoopMode.one);
+        if (wasPlaying) _player.play();
+      } catch (_) {}
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم التنزيل — يعمل الآن دون إنترنت')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذّر التنزيل')));
+    }
+  }
+
+  // حذف تلاوة الحزب المنزّلة والعودة للبثّ
+  Future<void> _deleteCurrent() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف التلاوة'),
+        content: Text('حذف تلاوة الحزب ${widget.hizbNumber} المنزّلة؟ يمكنك تنزيلها لاحقاً.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('حذف', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await AudioDownloadService.delete(widget.hizbNumber);
+    if (!mounted) return;
+    setState(() => _downloaded = false);
+    // العودة للبثّ من الخادم (يحتاج إنترنت)
+    try {
+      final pos = _player.position;
+      final wasPlaying = _player.playing;
+      await _player.setUrl(AudioConfig.urlFor(widget.hizbNumber));
+      await _player.seek(pos);
+      if (_looping) await _player.setLoopMode(LoopMode.one);
+      if (wasPlaying) _player.play();
+    } catch (_) {}
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حذف التلاوة المنزّلة')));
+  }
+
   @override
   void dispose() {
-    _syncTimer?.cancel();
+    _posSub?.cancel();
+    _player.dispose();
     _pdfCtrl.dispose();
     super.dispose();
   }
 
-  // ── Audio: IFrame Player API officielle de YouTube ────────
-  Future<void> _initAudio(String videoId, int startAt) async {
-    final startParam = startAt > 0 ? ', start: $startAt' : '';
-    final html = '''
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;background:#000;overflow:hidden}
-#p{width:100%;height:100%}
-</style>
-</head>
-<body>
-<div id="p"></div>
-<script>
-FlutterBridge.postMessage('dbg:page_start');
-var tag=document.createElement('script');
-tag.src='https://www.youtube.com/iframe_api';
-tag.onload=function(){FlutterBridge.postMessage('dbg:api_script_loaded');};
-tag.onerror=function(){FlutterBridge.postMessage('dbg:api_script_error');};
-document.head.appendChild(tag);
-var ytP;
-function onYouTubeIframeAPIReady(){
-  FlutterBridge.postMessage('dbg:api_ready');
-  ytP=new YT.Player('p',{
-    videoId:'$videoId',
-    playerVars:{autoplay:1,controls:0,playsinline:1,rel:0,modestbranding:1,origin:'https://localhost'$startParam},
-    events:{
-      onReady:function(e){
-        FlutterBridge.postMessage('dbg:player_ready');
-        e.target.unMute();
-        e.target.setVolume(100);
-        e.target.playVideo();
-      },
-      onError:function(e){FlutterBridge.postMessage('dbg:err'+e.data);},
-      onStateChange:function(e){
-        FlutterBridge.postMessage('dbg:state'+e.data);
-        if(e.data===1)      FlutterBridge.postMessage('playing');
-        else if(e.data===2) FlutterBridge.postMessage('paused');
-        else if(e.data===0) FlutterBridge.postMessage('ended');
-      }
-    }
-  });
-}
-window.yt_play =function(){if(ytP)ytP.playVideo();};
-window.yt_pause=function(){if(ytP)ytP.pauseVideo();};
-window.yt_seek =function(s){if(ytP){var t=(ytP.getCurrentTime()||0)+s;ytP.seekTo(Math.max(0,t),true);}};
-window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
-</script>
-</body>
-</html>''';
-
-    _audioCtrl = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'FlutterBridge',
-        onMessageReceived: (msg) {
-          if (!mounted) return;
-          final m = msg.message;
-          if (m.startsWith('time:')) { _handleTimeMessage(m); return; }
-          if (m.startsWith('dbg:'))  { return; }
-          switch (m) {
-            case 'playing':
-              setState(() { _playing = true; _audioReady = true; });
-              _startSyncTimer();
-            case 'paused':
-            case 'ended':
-              setState(() => _playing = false);
-              _syncTimer?.cancel();
-          }
-        },
-      );
-
-    if (_audioCtrl!.platform is AndroidWebViewController) {
-      await (_audioCtrl!.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
-    }
-
-    await _audioCtrl!.loadHtmlString(html, baseUrl: 'https://localhost');
-    setState(() {});
-  }
-
-  // ── Controls ───────────────────────────────────────────
-  void _togglePlay() {
-    if (_audioCtrl == null) return;
-    if (_playing) {
-      _audioCtrl!.runJavaScript('yt_pause()');
-    } else {
-      _audioCtrl!.runJavaScript('yt_play()');
-    }
-  }
-
-  void _seekBy(int seconds) {
-    _audioCtrl?.runJavaScript('yt_seek($seconds)');
-  }
-
-  // ── Helpers ────────────────────────────────────────────
-  String? _extractVideoId(String url) {
-    for (final p in [
-      RegExp(r'youtu\.be/([A-Za-z0-9_\-]{11})'),
-      RegExp(r'[?&]v=([A-Za-z0-9_\-]{11})'),
-    ]) {
-      final m = p.firstMatch(url);
-      if (m != null) return m.group(1);
-    }
-    return null;
-  }
-
-  int _extractStart(String url) {
-    final m = RegExp(r'[?&]t=(\d+)').firstMatch(url);
-    return m != null ? int.tryParse(m.group(1)!) ?? 0 : 0;
-  }
-
-
-  // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final hasAudio = _audioCtrl != null;
-
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -280,6 +286,24 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // زر التنزيل (لأحزاب لها تلاوة متوفّرة)
+          if (_isHizb && _hasAudio)
+            _downloading
+                ? Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.4, color: Colors.white,
+                          value: _dlProgress > 0 ? _dlProgress : null),
+                    ),
+                  )
+                : IconButton(
+                    tooltip: _downloaded ? 'منزّلة — اضغط لحذف التلاوة' : 'تنزيل التلاوة',
+                    icon: Icon(_downloaded ? Icons.download_done_rounded : Icons.download_rounded,
+                        size: 22, color: _downloaded ? AppTheme.gold : Colors.white),
+                    onPressed: _downloaded ? _deleteCurrent : _downloadCurrent,
+                  ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 22),
             onPressed: () {
@@ -300,42 +324,29 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
       ),
       body: Column(
         children: [
-          // PDF + WebView الصوت المخفي
           Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: PdfView(
-                    controller: _pdfCtrl,
-                    scrollDirection: Axis.horizontal,
-                    onPageChanged: _onPageChanged,
-                    onDocumentLoaded: (doc) => setState(() {
-                      _pageCount = doc.pagesCount;
-                      _loading   = false;
-                    }),
-                    onDocumentError: (_) => setState(() => _loading = false),
-                    builders: PdfViewBuilders<DefaultBuilderOptions>(
-                      options: const DefaultBuilderOptions(),
-                      documentLoaderBuilder: (_) => const Center(
-                        child: CircularProgressIndicator(color: AppTheme.primary),
-                      ),
-                      pageLoaderBuilder: (_) => const Center(
-                        child: CircularProgressIndicator(color: AppTheme.primary),
-                      ),
-                    ),
-                  ),
+            child: PdfView(
+              controller: _pdfCtrl,
+              scrollDirection: Axis.horizontal,
+              onPageChanged: _onPageChanged,
+              onDocumentLoaded: (doc) => setState(() {
+                _pageCount = doc.pagesCount;
+                _loading   = false;
+              }),
+              onDocumentError: (_) => setState(() => _loading = false),
+              builders: PdfViewBuilders<DefaultBuilderOptions>(
+                options: const DefaultBuilderOptions(),
+                documentLoaderBuilder: (_) => const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary),
                 ),
-                if (hasAudio)
-                  Positioned(
-                    left: 0, top: 0, width: 1, height: 1,
-                    child: WebViewWidget(controller: _audioCtrl!),
-                  ),
-              ],
+                pageLoaderBuilder: (_) => const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary),
+                ),
+              ),
             ),
           ),
-
-          // شريط التحكم ثابت في الأسفل — لا يغطي PDF
-          if (hasAudio)
+          // شريط التحكم بالتلاوة
+          if (_isHizb && _hasAudio)
             _AudioBar(
               playing:     _playing,
               ready:       _audioReady,
@@ -348,12 +359,25 @@ window.onerror=function(m){FlutterBridge.postMessage('dbg:jserr:'+m);};
               onPagePrev:  () => _goToPage(_currentPage - 1),
               onPageNext:  () => _goToPage(_currentPage + 1),
               onLoopToggle: _toggleLoop,
+            )
+          else if (_isHizb && !_hasAudio)
+            Container(
+              width: double.infinity,
+              color: AppTheme.primaryDk,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: const SafeArea(
+                top: false,
+                child: Text('تلاوة هذا الحزب غير متوفّرة بعد',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+              ),
             ),
         ],
       ),
     );
   }
 }
+
 
 // ══════════════════════════════════════════════════════════════
 class _AudioBar extends StatelessWidget {
