@@ -1,11 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
 
 // ═══════════════════════════════════════════════════════════
-//  YoutubeService — يجلب روابط تلاوة كل حزب من YouTube Data API
-//  بدلاً من Supabase. يقرأ playlist القارئ ويستخرج رقم الحزب من
-//  عنوان الفيديو (مثال: "الحزب الأول (1)" أو "... 13")، وأوقات
-//  الأثمان من وصف الفيديو (مثال: "03:26 - الثمن الثاني").
+//  YoutubeService — يجلب روابط تلاوة كل حزب من YouTube Data API.
+//  يقرأ playlist القارئ ويطابق كل حزب برقمه (1..60) من عنوان
+//  الفيديو (مثال: "القرآن الكريم - الرابع والخمسون (54) - ...").
+//  يستخدم package:http ليعمل على كل المنصّات بما فيها الويب
+//  (dart:io HttpClient غير متاح على Flutter Web).
 // ═══════════════════════════════════════════════════════════
 
 /// معلومات فيديو حزب واحد: الرابط + أوقات الأثمان (بالثواني، للأثمان 2..8)
@@ -28,60 +29,49 @@ class YoutubeService {
     final map = <int, YtVideo>{};
     try {
       String? pageToken;
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 8);
-      try {
-        // playlistItems محدودة بـ 50 عنصراً لكل صفحة → نتنقّل بالصفحات
-        do {
-          final uri = Uri.https(
-            'www.googleapis.com',
-            '/youtube/v3/playlistItems',
-            {
-              'part': 'snippet',
-              'playlistId': _playlistId,
-              'maxResults': '50',
-              'key': _apiKey,
-              if (pageToken != null) 'pageToken': pageToken,
-            },
+      // playlistItems محدودة بـ 50 عنصراً لكل صفحة → نتنقّل بالصفحات
+      do {
+        final uri = Uri.https(
+          'www.googleapis.com',
+          '/youtube/v3/playlistItems',
+          {
+            'part': 'snippet',
+            'playlistId': _playlistId,
+            'maxResults': '50',
+            'key': _apiKey,
+            if (pageToken != null) 'pageToken': pageToken,
+          },
+        );
+
+        final resp = await http.get(uri).timeout(const Duration(seconds: 12));
+        if (resp.statusCode != 200) break;
+
+        final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+
+        for (final item in (json['items'] as List<dynamic>? ?? [])) {
+          final snippet = (item as Map<String, dynamic>)['snippet']
+              as Map<String, dynamic>?;
+          if (snippet == null) continue;
+
+          final title   = (snippet['title'] as String?) ?? '';
+          final desc    = (snippet['description'] as String?) ?? '';
+          final videoId =
+              ((snippet['resourceId'] as Map<String, dynamic>?)?['videoId']
+                  as String?) ?? '';
+          if (videoId.isEmpty) continue;
+
+          final hizb = _hizbFromTitle(title);
+          if (hizb == null) continue; // "Private video" / "Deleted video"
+
+          // في حال تكرار الحزب نأخذ الرفع الأحدث (الأخير في القائمة)
+          map[hizb] = YtVideo(
+            'https://www.youtube.com/watch?v=$videoId',
+            _pageTimesFromDescription(desc),
           );
+        }
 
-          final req  = await client.getUrl(uri).timeout(const Duration(seconds: 8));
-          final resp = await req.close().timeout(const Duration(seconds: 10));
-          if (resp.statusCode != 200) break;
-
-          final body = await resp
-              .transform(utf8.decoder)
-              .join()
-              .timeout(const Duration(seconds: 10));
-          final json = jsonDecode(body) as Map<String, dynamic>;
-
-          for (final item in (json['items'] as List<dynamic>? ?? [])) {
-            final snippet = (item as Map<String, dynamic>)['snippet']
-                as Map<String, dynamic>?;
-            if (snippet == null) continue;
-
-            final title   = (snippet['title'] as String?) ?? '';
-            final desc    = (snippet['description'] as String?) ?? '';
-            final videoId =
-                ((snippet['resourceId'] as Map<String, dynamic>?)?['videoId']
-                    as String?) ?? '';
-            if (videoId.isEmpty) continue;
-
-            final hizb = _hizbFromTitle(title);
-            if (hizb == null) continue; // "Private video" / "Deleted video"
-
-            // في حال تكرار الحزب نأخذ الرفع الأحدث (الأخير في القائمة)
-            map[hizb] = YtVideo(
-              'https://www.youtube.com/watch?v=$videoId',
-              _pageTimesFromDescription(desc),
-            );
-          }
-
-          pageToken = json['nextPageToken'] as String?;
-        } while (pageToken != null);
-      } finally {
-        client.close();
-      }
+        pageToken = json['nextPageToken'] as String?;
+      } while (pageToken != null);
     } catch (_) {
       // فشل الشبكة/الـAPI — نُرجع ما جُمِع (قد يكون فارغاً)
     }
@@ -93,16 +83,20 @@ class YoutubeService {
   static void invalidateCache() => _cache = null;
 
   // ── يستخرج رقم الحزب (1..60) من عنوان الفيديو ──────────────
+  // يفضّل الرقم بين قوسين "(54)"، وإلا أول رقم في العنوان.
   static int? _hizbFromTitle(String title) {
     // حوّل الأرقام العربية-الهندية إلى لاتينية
     final normalized = title.replaceAllMapped(
       RegExp('[٠-٩]'),
       (m) => '${m.group(0)!.codeUnitAt(0) - 0x0660}',
     );
-    // أول تسلسل أرقام في العنوان هو رقم الحزب
-    final m = RegExp(r'\d{1,2}').firstMatch(normalized);
-    if (m == null) return null;
-    final n = int.tryParse(m.group(0)!);
+    // 1) الرقم بين قوسين هو الأدقّ: "... (54) ..."
+    final paren = RegExp(r'\((\d{1,2})\)').firstMatch(normalized);
+    final raw = paren?.group(1) ??
+        // 2) وإلا أول تسلسل أرقام في العنوان
+        RegExp(r'\d{1,2}').firstMatch(normalized)?.group(0);
+    if (raw == null) return null;
+    final n = int.tryParse(raw);
     return (n != null && n >= 1 && n <= 60) ? n : null;
   }
 
