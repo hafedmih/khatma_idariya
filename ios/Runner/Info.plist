@@ -26,6 +26,20 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<!-- مخطط إعادة التوجيه بعد تسجيل الدخول عبر مزوّد (Supabase OAuth) -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.hafedmih.khatma</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.hafedmih.khatma</string>
+				</array>
+			</dict>
+		</array>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>

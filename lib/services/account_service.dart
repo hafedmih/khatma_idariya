@@ -1,4 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, Uint8List, defaultTargetPlatform, TargetPlatform;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/account_models.dart';
 
@@ -24,8 +30,72 @@ class AccountService {
   }
 
   static Future<void> signInWithGoogle()   => signInWith(OAuthProvider.google);
-  static Future<void> signInWithApple()    => signInWith(OAuthProvider.apple);
   static Future<void> signInWithFacebook() => signInWith(OAuthProvider.facebook);
+
+  // ── تسجيل الدخول عبر Apple ──
+  // على iOS/macOS نستخدم واجهة Apple الأصلية (Face ID، دون متصفّح)؛
+  // أمّا على أندرويد والويب فنُكمل بمسار OAuth عبر المتصفّح.
+  static bool get _appleIsNative =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  static Future<void> signInWithApple() async {
+    if (!_appleIsNative) return signInWith(OAuthProvider.apple);
+
+    // nonce: نُرسل بصمته إلى Apple ونُرسل الأصل إلى Supabase ليتحقّق من الرمز.
+    final rawNonce = _randomNonce();
+    final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+    final AuthorizationCredentialAppleID cred;
+    try {
+      cred = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // إلغاء المستخدم ليس خطأ — نخرج بهدوء دون رسالة حمراء.
+      if (e.code == AuthorizationErrorCode.canceled) return;
+      rethrow;
+    }
+
+    final idToken = cred.identityToken;
+    if (idToken == null) {
+      throw AuthException('لم تُرجع Apple رمز الهوية');
+    }
+
+    await _sb.auth.signInWithIdToken(
+      provider: OAuthProvider.apple,
+      idToken: idToken,
+      nonce: rawNonce,
+    );
+
+    // Apple تُرسل الاسم في أوّل تصريح فقط — نحفظه قبل أن يضيع نهائياً،
+    // لأنّ مُشغّل قاعدة البيانات يكتفي بمقطع البريد قبل @ عند غياب الاسم.
+    final name = [cred.givenName, cred.familyName]
+        .whereType<String>()
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+    if (name.isNotEmpty) {
+      try {
+        await _sb.auth.updateUser(UserAttributes(data: {'full_name': name}));
+        await updateDisplayName(name);
+      } catch (_) {
+        // فشل حفظ الاسم لا يُبطل تسجيل دخول ناجح.
+      }
+    }
+  }
+
+  static String _randomNonce([int length = 32]) {
+    const chars =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+    final rnd = Random.secure();
+    return List.generate(length, (_) => chars[rnd.nextInt(chars.length)]).join();
+  }
 
   // ── بديل: بريد/كلمة مرور (للاختبار قبل ضبط OAuth) ──
   static Future<void> signInEmail(String email, String password) =>

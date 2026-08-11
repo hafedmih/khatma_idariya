@@ -391,6 +391,11 @@ button.hizb-card.compact:hover { box-shadow: 0 6px 16px rgba(26,92,56,.18); }
 .about-banner .ab-txt small { font-size: 12px; color: var(--text-low); }
 .about-banner .ab-chev { margin-inline-start: auto; color: var(--text-low); font-size: 22px; }
 
+/* شريط تحميل التطبيق (الصفحة الرئيسية) */
+.dl-banner { margin: 0 0 12px; border-color: var(--accent); background: linear-gradient(135deg, rgba(46,139,87,.10), rgba(46,139,87,.04)); }
+.dl-banner .ab-ic { background: var(--primary); color: #fff; }
+.dl-banner .ab-txt b { color: var(--accent); }
+
 /* ═══ صفحة "حول" ═══ */
 .about-hero { padding-bottom: 22px; }
 .about-head { display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -408,6 +413,9 @@ button.hizb-card.compact:hover { box-shadow: 0 6px 16px rgba(26,92,56,.18); }
 .play-btn .pt { display: flex; flex-direction: column; line-height: 1.15; text-align: left; direction: ltr; }
 .play-btn .pt small { font-size: 10px; opacity: .85; letter-spacing: .3px; }
 .play-btn .pt b { font-size: 17px; font-weight: 700; }
+.play-btn .pi svg { width: 21px; height: 21px; fill: currentColor; display: block; }
+/* نساوي ارتفاع زر App Store بزر Google Play (سطر الأيقونة ٢٢px × ١٫٧) */
+.ios-btn .pi { display: grid; place-items: center; height: calc(22px * 1.7); }
 .qr { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .qr img { width: 108px; height: 108px; border-radius: 10px; border: 1px solid var(--border); background: #fff; padding: 5px; }
 .qr span { font-size: 11px; color: var(--text-low); }

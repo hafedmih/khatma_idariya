@@ -10,6 +10,17 @@ const MONTHS  = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي
 const ORDINALS = ['الأول', 'الثاني', 'الثالث', 'الرابع',
                   'الخامس', 'السادس', 'السابع', 'الثامن'];
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.hafedmih.khatma';
+const IOS_URL  = 'https://apps.apple.com/app/id6788796894';
+
+// نظام الجهاز — لاختيار رابط المتجر المناسب
+function deviceOS() {
+  const ua = navigator.userAgent || '';
+  if (/Android/i.test(ua)) return 'android';
+  // iPadOS 13+ يعرّف نفسه كـ Mac، لذا نتحقق من اللمس أيضاً
+  if (/iPad|iPhone|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'other';
+}
+function storeUrl() { return deviceOS() === 'ios' ? IOS_URL : PLAY_URL; }
 
 // تدرّجات ألوان الأحزاب الثلاثة (app_theme.dart)
 const HIZB_GRADIENTS = [
@@ -83,6 +94,7 @@ function renderHome() {
 
   document.getElementById('app').innerHTML = `
     <div class="wrap">
+      ${downloadBanner()}
       ${dateCard(d, nums.length, cycle, dayInCyc)}
       <div class="section-title"><span class="bar"></span><h2>ورد اليوم</h2><span class="sub">${nums.length} أحزاب</span></div>
       <div id="hizb-list">${nums.map((n, i) => hizbCard(AHZAB_BY_NUM[n], i)).join('')}</div>
@@ -130,6 +142,39 @@ function dateCard(d, hizbCount, cycle, dayInCyc) {
         <div class="stat"><span class="k">يوم الدورة</span><span class="v">${dayInCyc} / ٢١</span></div>
       </div>
     </div>`;
+}
+
+// أزرار المتاجر — يظهر زر نظام الجهاز فقط، والزرّان معاً على سطح المكتب
+function storeButtons() {
+  const os = deviceOS();
+  const play = `
+    <a class="play-btn" href="${PLAY_URL}" target="_blank" rel="noopener">
+      <span class="pi">▶</span>
+      <span class="pt"><small>متوفّر على</small><b>Google Play</b></span>
+    </a>`;
+  const ios = `
+    <a class="play-btn ios-btn" href="${IOS_URL}" target="_blank" rel="noopener">
+      <span class="pi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.7c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.5 0-2.8.8-3.6 2.1-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.6 2.2 2.7 2.2 1.1 0 1.5-.7 2.8-.7 1.3 0 1.6.7 2.8.7 1.2 0 1.9-1.1 2.6-2.1.8-1.2 1.2-2.4 1.2-2.4s-2.2-.9-2.2-3.3zM14.3 5.9c.6-.7 1-1.7.9-2.7-.9 0-2 .6-2.6 1.3-.6.6-1.1 1.7-.9 2.6 1 .1 2-.5 2.6-1.2z"/></svg></span>
+      <span class="pt"><small>حمّل من</small><b>App Store</b></span>
+    </a>`;
+  if (os === 'ios') return ios;
+  if (os === 'android') return play;
+  return play + ios;
+}
+
+// شريط التحميل في الصفحة الرئيسية
+function downloadBanner() {
+  const os = deviceOS();
+  const sub = os === 'ios' ? 'من App Store — تذكيرات يومية وقراءة دون إنترنت'
+            : os === 'android' ? 'من Google Play — تذكيرات يومية وقراءة دون إنترنت'
+            : 'أندرويد و آيفون — تذكيرات يومية وقراءة دون إنترنت';
+  const act = os === 'other' ? 'openAbout()' : `window.open('${storeUrl()}','_blank','noopener')`;
+  return `
+    <button class="about-banner dl-banner" onclick="${act}">
+      <span class="ab-ic">⬇️</span>
+      <span class="ab-txt"><b>حمّل التطبيق على جوالك</b><small>${sub}</small></span>
+      <span class="ab-chev">‹</span>
+    </button>`;
 }
 
 function fridayBanner() {
@@ -348,17 +393,15 @@ function openAbout() {
       </section>
 
       <section class="about-card">
-        <h3><span class="bar"></span> تطبيق الجوال (أندرويد)</h3>
+        <h3><span class="bar"></span> تطبيق الجوال (أندرويد و آيفون)</h3>
         <p>لتجربة أكمل مع <b>التذكيرات اليومية</b> والقراءة دون إنترنت، حمّل التطبيق على هاتفك:</p>
         <div class="store-row">
-          <a class="play-btn" href="${PLAY_URL}" target="_blank" rel="noopener">
-            <span class="pi">▶</span>
-            <span class="pt"><small>متوفّر على</small><b>Google Play</b></span>
-          </a>
+          ${storeButtons()}
+          ${deviceOS() === 'ios' ? '' : `
           <div class="qr">
             <img src="play-qr.png" alt="رمز QR لتحميل التطبيق من Google Play">
             <span>امسح الرمز للتحميل</span>
-          </div>
+          </div>`}
         </div>
         <div class="feat-title">أهم مميزات التطبيق</div>
         <ul class="features">
