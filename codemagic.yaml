@@ -12,9 +12,8 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.hafedmih.khatma
+      # ملاحظة: لا نستخدم ios_signing هنا — التوقيع يُدار يدوياً في الخطوات 3→5.
+      # وجود الاثنين معاً يجلب البروفايل مرّتين وقد يفوز نسخة قديمة منه.
 
     scripts:
       - name: 1. Get Flutter Packages
@@ -52,6 +51,25 @@ workflows:
         script: |
           # Inject the fetched profile into your Xcode project
           xcode-project use-profiles
+
+      - name: 5b. Verify Profile Entitlements
+        script: |
+          # Fail early and loudly if the fetched profile lacks Sign in with Apple,
+          # instead of a confusing signing error 10 seconds into the archive.
+          ok=0
+          for p in "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision; do
+            [ -e "$p" ] || continue
+            echo "=== $p"
+            ents=$(security cms -D -i "$p" | plutil -extract Entitlements xml1 -o - -)
+            echo "$ents"
+            echo "$ents" | grep -q "com.apple.developer.applesignin" && ok=1
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "ERROR: no fetched profile carries com.apple.developer.applesignin."
+            echo "Delete the profile at developer.apple.com so --create regenerates it."
+            exit 1
+          fi
+          echo "OK: Sign in with Apple present in the fetched profile."
 
       - name: 6. Build iOS IPA
         script: |
