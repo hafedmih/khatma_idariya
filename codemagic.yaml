@@ -12,8 +12,12 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      # ملاحظة: لا نستخدم ios_signing هنا — التوقيع يُدار يدوياً في الخطوات 3→5.
-      # وجود الاثنين معاً يجلب البروفايل مرّتين وقد يفوز نسخة قديمة منه.
+      # التوقيع التلقائي: يُنشئ سلسلة المفاتيح، ويجلب الشهادة والبروفايل
+      # (مع مفتاحها الخاص)، ويطبّقهما على مشروع Xcode قبل تنفيذ السكربتات.
+      # لا تُضِف خطوات fetch-signing-files يدوية — تفتقر إلى المفتاح الخاص وتفشل.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hafedmih.khatma
 
     scripts:
       - name: 1. Get Flutter Packages
@@ -36,23 +40,14 @@ workflows:
             sed -i '' "s/^platform :ios.*/platform :ios, '14.0'/" ios/Podfile
           fi
 
-      - name: 3. Initialize Keychain
+      - name: 3. Apply Profiles & Write Export Options
         script: |
-          # Create the secure vault on the Mac
-          keychain initialize
-
-      - name: 4. Fetch Automatic Signing Files
-        script: |
-          # Automatically connect to Apple, create/download the Certificate & Profile, and lock them in the vault
-          app-store-connect fetch-signing-files "com.hafedmih.khatma" --type IOS_APP_STORE --create
-          keychain add-certificates
-
-      - name: 5. Apply Profile to Xcode
-        script: |
-          # Inject the fetched profile into your Xcode project
+          # التوقيع التلقائي ثبّت البروفايلات مسبقاً؛ هذا السطر يقرأ المثبَّت منها
+          # ويكتب /Users/builder/export_options.plist الذي تحتاجه خطوة البناء.
+          # لا يتطلّب المفتاح الخاص، بخلاف fetch-signing-files.
           xcode-project use-profiles
 
-      - name: 5b. Verify Profile Entitlements
+      - name: 4. Verify Profile Entitlements
         script: |
           # Fail early and loudly if the fetched profile lacks Sign in with Apple,
           # instead of a confusing signing error 10 seconds into the archive.
@@ -66,12 +61,13 @@ workflows:
           done
           if [ "$ok" -ne 1 ]; then
             echo "ERROR: no fetched profile carries com.apple.developer.applesignin."
-            echo "Delete the profile at developer.apple.com so --create regenerates it."
+            echo "Delete the 'khatma' profile at developer.apple.com so a fresh one"
+            echo "is generated with every capability enabled on the App ID."
             exit 1
           fi
           echo "OK: Sign in with Apple present in the fetched profile."
 
-      - name: 6. Build iOS IPA
+      - name: 5. Build iOS IPA
         script: |
           # Build the final App Store archive!
           flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
