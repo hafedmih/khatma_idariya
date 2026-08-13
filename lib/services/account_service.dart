@@ -21,11 +21,25 @@ class AccountService {
   static bool get isLoggedIn => user != null;
   static Stream<AuthState> get authChanges => _sb.auth.onAuthStateChange;
 
+  static bool get _isApplePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
   // ── تسجيل الدخول عبر مزوّد (Google / Apple / Facebook) ──
   static Future<void> signInWith(OAuthProvider provider) {
+    // Google لا يُكمل المصادقة داخل ورقة SFSafariViewController على iOS:
+    // تفشل أوّل عملية تحميل (فتظهر رسالة خطأ) ولا يعود المستخدم تلقائياً.
+    // الحزمة تُطبّق هذا الاستثناء على أندرويد فقط، فنُكمله هنا لـ iOS/macOS.
+    final needsExternalBrowser =
+        provider == OAuthProvider.google && _isApplePlatform;
+
     return _sb.auth.signInWithOAuth(
       provider,
       redirectTo: kIsWeb ? null : _redirect,
+      authScreenLaunchMode: needsExternalBrowser
+          ? LaunchMode.externalApplication
+          : LaunchMode.platformDefault,
     );
   }
 
@@ -35,13 +49,8 @@ class AccountService {
   // ── تسجيل الدخول عبر Apple ──
   // على iOS/macOS نستخدم واجهة Apple الأصلية (Face ID، دون متصفّح)؛
   // أمّا على أندرويد والويب فنُكمل بمسار OAuth عبر المتصفّح.
-  static bool get _appleIsNative =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
-
   static Future<void> signInWithApple() async {
-    if (!_appleIsNative) return signInWith(OAuthProvider.apple);
+    if (!_isApplePlatform) return signInWith(OAuthProvider.apple);
 
     // nonce: نُرسل بصمته إلى Apple ونُرسل الأصل إلى Supabase ليتحقّق من الرمز.
     final rawNonce = _randomNonce();
@@ -64,7 +73,7 @@ class AccountService {
 
     final idToken = cred.identityToken;
     if (idToken == null) {
-      throw AuthException('لم تُرجع Apple رمز الهوية');
+      throw const AuthException('لم تُرجع Apple رمز الهوية');
     }
 
     await _sb.auth.signInWithIdToken(
