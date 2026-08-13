@@ -12,7 +12,10 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   url_launcher: ^6.3.0
-  intl: 0.20.2
+  # flutter_localizations يُثبّت نسخة intl بنفسه، وتختلف بين إصدارات Flutter
+  # (المحلّي يُثبّت 0.20.2، وstable على Codemagic يطلب ^0.20.3).
+  # any يترك القرار للـ SDK فيَحُلّ في البيئتين.
+  intl: any
   share_plus: 12.0.2
   webview_flutter: ^4.14.0
   supabase_flutter: ^2.8.4
