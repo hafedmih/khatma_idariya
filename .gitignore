@@ -49,3 +49,5 @@ app.*.map.json
 /android/key.properties
 *.jks
 *.keystore
+*.p8
+AuthKey_*

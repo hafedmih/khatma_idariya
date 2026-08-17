@@ -57,7 +57,7 @@ class AudioDownloadService {
     // 2) إن تعذّر السرد (صلاحيات) نتحقّق عبر HEAD بالتوازي
     if (set.isEmpty) {
       final futures = <Future<void>>[];
-      for (var h = 1; h <= 60; h++) {
+      for (var h = 1; h <= AudioConfig.lastTrack; h++) {
         futures.add(remoteExists(h).then((ok) { if (ok) set.add(h); }));
       }
       await Future.wait(futures);

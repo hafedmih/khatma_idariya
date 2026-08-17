@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/audio_config.dart';
 import '../models/hizb.dart';
 import '../services/hizb_service.dart';
 import '../services/khatma_calculator.dart';
@@ -423,11 +424,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // بطاقة دعاء ختم القرآن (تظهر يوم إتمام الختمة) — تفتح PDF بلا صوت
+  // بطاقة دعاء ختم القرآن (تظهر يوم إتمام الختمة) — قراءة مع تلاوة (62.mp3)
   Widget _buildKhatmaDuaaCard() {
     return GestureDetector(
       onTap: () => Navigator.push(context, _slide(const PdfViewerScreen(
-          title: 'دعاء ختم القرآن', assetPath: 'assets/pdf/douaa.pdf'))),
+          title: 'دعاء ختم القرآن',
+          assetPath: 'assets/pdf/douaa.pdf',
+          audioNumber: AudioConfig.khatmaDuaa))),
       child: Container(
         margin: const EdgeInsets.only(top: 8, bottom: 12),
         padding: const EdgeInsets.all(14),
@@ -547,12 +550,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── بطاقة سورة الكهف (يوم الجمعة) — الضغط يفتحها للقراءة بلا صوت ──
+  // ── بطاقة سورة الكهف (يوم الجمعة) — قراءة مع تلاوة (61.mp3) ──
   Widget _buildFridayBanner() {
     return GestureDetector(
       onTap: () => Navigator.push(context, _slide(const PdfViewerScreen(
           title: 'سورة الكهف',
-          assetPath: 'assets/pdf/kahf.pdf'))),
+          assetPath: 'assets/pdf/kahf.pdf',
+          audioNumber: AudioConfig.kahf))),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(

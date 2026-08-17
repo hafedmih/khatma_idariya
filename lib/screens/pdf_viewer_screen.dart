@@ -16,7 +16,10 @@ class PdfViewerScreen extends StatefulWidget {
   final String?    youtubeUrl;
   final HizbLinks? hizbLinks; // لأوقات الصفحات
   final int        initialPage; // الصفحة المبدئية (لفتح ثمن معيّن)
-  final String?    assetPath;  // مسار PDF مخصّص (سورة الكهف / دعاء الختمة) بلا صوت
+  final String?    assetPath;  // مسار PDF مخصّص (سورة الكهف / دعاء الختمة)
+  // رقم ملف التلاوة إن اختلف عن رقم الحزب: 61 سورة الكهف، 62 دعاء الختمة.
+  // اتركه فارغاً للأحزاب فيُستخدم hizbNumber.
+  final int?       audioNumber;
 
   const PdfViewerScreen({
     super.key,
@@ -26,6 +29,7 @@ class PdfViewerScreen extends StatefulWidget {
     this.hizbLinks,
     this.initialPage = 1,
     this.assetPath,
+    this.audioNumber,
   });
 
   @override
@@ -40,6 +44,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   int  _currentPage = 1;
 
   String get _assetPath => widget.assetPath ?? 'assets/pdf/${widget.hizbNumber}.pdf';
+
+  /// رقم ملف التلاوة في حاوية «audio» — يفترق عن رقم الحزب في
+  /// سورة الكهف (61) ودعاء الختمة (62).
+  int get _track => widget.audioNumber ?? widget.hizbNumber;
 
   // ── Audio (MP3 عبر just_audio) ─────────────────────────
   final AudioPlayer _player = AudioPlayer();
@@ -73,7 +81,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     if (_pageTimes.isNotEmpty) return;
 
     // 1) نسخة محلية محفوظة عند التنزيل — تُتيح الانتقال بين الصفحات دون إنترنت
-    _pageTimes = await AudioDownloadService.cachedPageTimes(widget.hizbNumber);
+    _pageTimes = await AudioDownloadService.cachedPageTimes(_track);
     if (_pageTimes.isNotEmpty) return;
 
     // 2) من قاعدة البيانات (مع تخزين النتيجة محلياً للاستخدام لاحقاً دون إنترنت)
@@ -81,13 +89,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       final m = await Supabase.instance.client
           .from('hizb_page_times')
           .select('page_times')
-          .eq('hizb', widget.hizbNumber)
+          .eq('hizb', _track)
           .maybeSingle()
           .timeout(const Duration(seconds: 6));
       if (m != null && m['page_times'] != null) {
         _pageTimes = (m['page_times'] as List).map((e) => (e as num).toInt()).toList();
         if (_downloaded && _pageTimes.isNotEmpty) {
-          await AudioDownloadService.savePageTimes(widget.hizbNumber, _pageTimes);
+          await AudioDownloadService.savePageTimes(_track, _pageTimes);
         }
       }
     } catch (_) {}
@@ -97,7 +105,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void initState() {
     super.initState();
     _initPdf();
-    _isHizb = widget.assetPath == null && AudioConfig.hasAudioFor(widget.hizbNumber);
+    // التلاوة متاحة لأي رقم ملف صالح — أحزاباً كانت أو الكهف/الدعاء.
+    _isHizb = AudioConfig.hasAudioFor(_track);
     _player.playingStream.listen((p) { if (mounted) setState(() => _playing = p); });
     if (_isHizb) _setupAudio();
   }
@@ -132,17 +141,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // تهيئة التلاوة: من الملف المحلي إن كان منزّلاً، وإلا بثّاً من الخادم
   Future<void> _setupAudio() async {
     _autoRecite = await AppPrefs.autoRecite();
-    _downloaded = await AudioDownloadService.isDownloaded(widget.hizbNumber);
+    _downloaded = await AudioDownloadService.isDownloaded(_track);
     await _loadPageTimes();
     try {
       if (_downloaded) {
-        final f = await AudioDownloadService.localFile(widget.hizbNumber);
+        final f = await AudioDownloadService.localFile(_track);
         await _player.setFilePath(f.path);
         _hasAudio = true;
       } else {
-        final exists = await AudioDownloadService.remoteExists(widget.hizbNumber);
+        final exists = await AudioDownloadService.remoteExists(_track);
         if (exists) {
-          await _player.setUrl(AudioConfig.urlFor(widget.hizbNumber));
+          await _player.setUrl(AudioConfig.urlFor(_track));
           _hasAudio = true;
         } else {
           _hasAudio = false; // لم تُرفع تلاوة هذا الحزب بعد
@@ -205,18 +214,18 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   Future<void> _downloadCurrent() async {
     if (_downloading || _downloaded || !_hasAudio) return;
     setState(() { _downloading = true; _dlProgress = 0; });
-    final ok = await AudioDownloadService.download(widget.hizbNumber,
+    final ok = await AudioDownloadService.download(_track,
         onProgress: (p) { if (mounted) setState(() => _dlProgress = p); });
     if (!mounted) return;
     setState(() { _downloading = false; _downloaded = ok; });
     if (ok) {
       // احفظ أوقات الصفحات محلياً ليعمل الانتقال بين الصفحات دون إنترنت
       if (_pageTimes.isEmpty) await _loadPageTimes();
-      await AudioDownloadService.savePageTimes(widget.hizbNumber, _pageTimes);
+      await AudioDownloadService.savePageTimes(_track, _pageTimes);
       try {
         final pos = _player.position;
         final wasPlaying = _player.playing;
-        final f = await AudioDownloadService.localFile(widget.hizbNumber);
+        final f = await AudioDownloadService.localFile(_track);
         await _player.setFilePath(f.path);
         await _player.seek(pos);
         if (_looping) await _player.setLoopMode(LoopMode.one);
@@ -236,7 +245,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('حذف التلاوة'),
-        content: Text('حذف تلاوة الحزب ${widget.hizbNumber} المنزّلة؟ يمكنك تنزيلها لاحقاً.'),
+        // العنوان يصلح للأحزاب وللكهف/الدعاء على السواء.
+        content: Text('حذف تلاوة «${widget.title}» المنزّلة؟ يمكنك تنزيلها لاحقاً.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
           ElevatedButton(
@@ -248,14 +258,14 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       ),
     );
     if (ok != true) return;
-    await AudioDownloadService.delete(widget.hizbNumber);
+    await AudioDownloadService.delete(_track);
     if (!mounted) return;
     setState(() => _downloaded = false);
     // العودة للبثّ من الخادم (يحتاج إنترنت)
     try {
       final pos = _player.position;
       final wasPlaying = _player.playing;
-      await _player.setUrl(AudioConfig.urlFor(widget.hizbNumber));
+      await _player.setUrl(AudioConfig.urlFor(_track));
       await _player.seek(pos);
       if (_looping) await _player.setLoopMode(LoopMode.one);
       if (wasPlaying) _player.play();

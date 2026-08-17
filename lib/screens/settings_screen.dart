@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import '../services/app_prefs.dart';
 import '../services/account_service.dart';
+import '../services/admin_service.dart';
 import '../theme/app_theme.dart';
+import 'admin_screen.dart';
 import 'blocked_users_screen.dart';
 
 // ═══════════════════════════════════════════════════════════
@@ -22,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final Map<String, bool> _reminders = {};
   final Map<String, TimeOfDay> _times = {};
   bool _loading = true;
+  bool _isAdmin = false;
 
   @override
   void initState() {
@@ -39,12 +42,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final t = await NotificationService.timeOf(r);
       times[r.prefKey] = TimeOfDay(hour: t[0], minute: t[1]);
     }
+    // يظهر مدخل لوحة الإدارة للمشرفين فقط.
+    final admin = await AdminService.isAdmin();
     if (!mounted) return;
     setState(() {
       _master     = master;
       _autoRecite = autoRecite;
       _reminders..clear()..addAll(enabled);
       _times..clear()..addAll(times);
+      _isAdmin    = admin;
       _loading   = false;
     });
   }
@@ -162,6 +168,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
+                      ),
+                    ),
+                  ),
+                ],
+                if (_isAdmin) ...[
+                  const SizedBox(height: 22),
+                  _sectionTitle('الإدارة'),
+                  const SizedBox(height: 8),
+                  _card(
+                    child: ListTile(
+                      leading: const Icon(Icons.admin_panel_settings_rounded,
+                          color: AppTheme.primary),
+                      title: const Text('لوحة الإدارة',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('روابط الأحزاب وضبط أوقات الصفحات'),
+                      trailing: const Icon(Icons.chevron_left_rounded,
+                          color: AppTheme.textLow),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminScreen()),
                       ),
                     ),
                   ),
