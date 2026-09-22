@@ -1,7 +1,7 @@
 name: khatma_idariya
 description: الختمة الإدارية — برنامج أهل شنقيط لختم القرآن كل ٢١ يوماً
 publish_to: 'none'
-version: 1.0.10+13
+version: 1.0.11+14
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -50,6 +50,7 @@ flutter:
     - assets/ahzab.json
     - assets/links.json
     - assets/pdf/
+    - assets/mounjyat/
 
 # ── أيقونة التطبيق (Android + iOS) ──
 flutter_launcher_icons:

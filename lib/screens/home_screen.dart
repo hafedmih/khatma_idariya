@@ -182,6 +182,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool get _isFriday => _date.weekday == DateTime.friday;
 
+  // المنجيات: رقم السورة الحالية بحسب وقت اليوم
+  // 1→06:00, 2→15:00, 3→17:00, 4→20:00, 5→21:00
+  int _currentMounjyatNum() {
+    final h = DateTime.now().hour;
+    if (h >= 21) return 5;
+    if (h >= 20) return 4;
+    if (h >= 17) return 3;
+    if (h >= 15) return 2;
+    if (h >= 6)  return 1;
+    return 5; // 00:00–05:59 → السورة الخامسة (ورد الليل)
+  }
+
   // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -347,6 +359,10 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _buildDateCard(),
           const SizedBox(height: 8),
+          if (_isToday) ...[
+            _buildMounjyatCard(),
+            const SizedBox(height: 8),
+          ],
           if (_resume != null && _resume!.page < 8) ...[
             _buildResumeCard(),
             const SizedBox(height: 8),
@@ -547,6 +563,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── بطاقة المنجيات: صورة السورة الحالية مع فتح PDF عند الضغط ──
+  Widget _buildMounjyatCard() {
+    final num = _currentMounjyatNum();
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        _slide(PdfViewerScreen(
+          title: 'المنجيات',
+          assetPath: 'assets/mounjyat/$num.pdf',
+          audioNumber: AudioConfig.mounjyatOffset + num,
+        )),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.asset(
+          'assets/mounjyat/$num.jpeg',
+          width: double.infinity,
+          fit: BoxFit.cover,
+        ),
+      ),
     );
   }
 
