@@ -68,7 +68,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   WebViewController? _ytCtrl;
   bool _ytPlaying = false;
   bool _ytReady   = false;
-  bool _ytInjected = false; // نحقن JS مرة واحدة فقط
+  bool _ytInjected = false;
+
+  // روابط ثابتة لتلاوات المنجيات (1..5) على يوتيوب
+  static const _mounjyatYt = {
+    101: 'https://youtu.be/nPQgx4Dsy60',
+    102: 'https://youtu.be/d6Ue1xrCGmQ',
+    103: 'https://youtu.be/bjABluRX2ns',
+    104: 'https://youtu.be/7WtLi1zixjg',
+    105: 'https://youtu.be/P0IfHTtGrlI',
+  };
 
   int _secForPage(int page) {
     if (page <= 1) return 0;
@@ -169,8 +178,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       return;
     }
 
-    // 3) يوتيوب — WebView خفي 1×1px (نفس الطريقة التي تعمل في YoutubeViewerScreen)
-    if (widget.hizbNumber >= 1 && widget.hizbNumber <= 60) {
+    // 3) يوتيوب — WebView خفي (الأحزاب 1..60 والمنجيات 101..105)
+    final isMounjyat = _track >= 101 && _track <= 105;
+    if ((widget.hizbNumber >= 1 && widget.hizbNumber <= 60) || isMounjyat) {
       await _setupYoutubeWebAudio();
     }
 
@@ -180,10 +190,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // يُنشئ WebViewController مخفياً يشغّل صوت يوتيوب في الخلفية
   Future<void> _setupYoutubeWebAudio() async {
     try {
-      String? ytUrl = widget.youtubeUrl?.isNotEmpty == true
-          ? widget.youtubeUrl
-          : null;
-      if (ytUrl == null) {
+      // المنجيات: روابط ثابتة — الأحزاب: YouTube API (مخزّنة مؤقتاً)
+      String? ytUrl;
+      if (_track >= 101 && _track <= 105) {
+        ytUrl = _mounjyatYt[_track];
+      } else {
         final map = await YoutubeService.load();
         ytUrl = map[widget.hizbNumber]?.url;
       }
@@ -231,24 +242,31 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // نحقن JavaScript بعد تحميل الصفحة للسيطرة على عنصر <video>
   Future<void> _ytInjectControls() async {
     await _ytCtrl?.runJavaScript(r"""
-      (function waitForVideo() {
-        var v = document.querySelector('video');
-        if (!v) { setTimeout(waitForVideo, 400); return; }
-        v.muted  = false;
-        v.volume = 1;
-        v.addEventListener('play',  function(){ FlutterYT.postMessage('playing'); });
-        v.addEventListener('pause', function(){ FlutterYT.postMessage('paused');  });
-        v.addEventListener('ended', function(){ FlutterYT.postMessage('ended');   });
-        // يُعيد رفع الصوت كلما أخمده يوتيوب (يحدث عند إخفاء الـ WebView)
-        setInterval(function() {
-          var vid = document.querySelector('video');
-          if (vid && (vid.muted || vid.volume < 0.5)) {
-            vid.muted = false; vid.volume = 1;
-          }
-        }, 800);
-        v.play()
-          .then(function(){ FlutterYT.postMessage('ready'); })
-          .catch(function(){ FlutterYT.postMessage('ready'); });
+      (function() {
+        var attempts = 0;
+        function waitForVideo() {
+          attempts++;
+          // بعد 20 ثانية بدون <video>: الفيديو محذوف أو خاص
+          if (attempts > 50) { FlutterYT.postMessage('unavailable'); return; }
+          var v = document.querySelector('video');
+          if (!v) { setTimeout(waitForVideo, 400); return; }
+          v.muted  = false;
+          v.volume = 1;
+          v.addEventListener('play',  function(){ FlutterYT.postMessage('playing'); });
+          v.addEventListener('pause', function(){ FlutterYT.postMessage('paused');  });
+          v.addEventListener('ended', function(){ FlutterYT.postMessage('ended');   });
+          // يُعيد رفع الصوت كلما أخمده يوتيوب
+          setInterval(function() {
+            var vid = document.querySelector('video');
+            if (vid && (vid.muted || vid.volume < 0.5)) {
+              vid.muted = false; vid.volume = 1;
+            }
+          }, 800);
+          v.play()
+            .then(function(){ FlutterYT.postMessage('ready'); })
+            .catch(function(){ FlutterYT.postMessage('ready'); });
+        }
+        waitForVideo();
       })();
     """);
   }
@@ -269,6 +287,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       case 'paused':
       case 'ended':
         setState(() => _ytPlaying = false);
+        break;
+      case 'unavailable':
+        // الفيديو محذوف أو خاص — أظهر "غير متوفّرة"
+        setState(() { _ytCtrl = null; _hasAudio = false; _ytReady = false; });
         break;
     }
   }
